@@ -1,0 +1,16 @@
+[
+    {
+        "name": "SWAT Training Session",
+        "date": "2025-04-15",
+        "time": "18:00",
+        "description": "A training session for all members to enhance their skills.",
+        "creator": "BotMaster"
+    },
+    {
+        "name": "Game Night",
+        "date": "2025-04-20",
+        "time": "20:00",
+        "description": "Join us for a fun night of games and camaraderie!",
+        "creator": "AdminUser"
+    }
+]
