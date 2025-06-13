@@ -596,26 +596,388 @@ async def error_logs(interaction: discord.Interaction):
 
 
 
-@bot.tree.command(name="info", description="Show info about the bot")
-async def info(interaction: discord.Interaction):
-    uptime = datetime.now(timezone.utc) - bot.launch_time
+# === CONFIG ===
+SHIFT_ROLE_ID_2 = 1343299303459913761
+BREAK_ROLE_ID_2 = 1343299319939207208
+SHIFT_LOG_CHANNEL_ID_2 = 1381409066156425236
+STAFF_ROLE_ID = 1343234687505530902
 
-    embed = discord.Embed(
-        title="🤖 Bot Information",
-        color=discord.Color.blurple(),
-        timestamp=datetime.now(timezone.utc)
-    )
-    embed.add_field(name="Name", value=bot.user.name, inline=True)
-    embed.add_field(name="ID", value=str(bot.user.id), inline=True)
-    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
-    embed.add_field(name="Ping", value=f"{round(bot.latency * 1000)}ms", inline=True)
-    embed.add_field(name="Uptime", value=str(uptime).split('.')[0], inline=True)
-    embed.set_thumbnail(url=bot.user.display_avatar.url)
-    embed.set_footer(text="Made by YourName")
+INFRACTION_FILE = "infractions.json"
+SHIFT_FILE = "shifts.json"
 
-    await interaction.response.send_message(embed=embed)
+# === UTILITIES ===
+def load_json(file):
+    if os.path.exists(file):
+        with open(file, "r") as f:
+            return json.load(f)
+    return {}
 
+def save_json(file, data):
+    with open(file, "w") as f:
+        json.dump(data, f, indent=4)
 
+def create_embed(title, description, color=discord.Color.blue()):
+    return Embed(title=title, description=description, color=color)
+
+def infraction_active(infraction):
+    if infraction.get("expires"):
+        exp_dt = datetime.fromisoformat(infraction["expires"])
+        return datetime.utcnow() < exp_dt
+    return True
+
+def has_active_suspension(user_id, infractions):
+    user_infractions = infractions.get(user_id, [])
+    for inf in user_infractions:
+        if inf["type"].lower() == "suspended" and infraction_active(inf):
+            return True
+    return False
+
+def has_staff_role(member: discord.Member):
+    return any(role.id == STAFF_ROLE_ID for role in member.roles)
+
+def get_role(guild, role_id):
+    return guild.get_role(role_id)
+
+def seconds_to_hms(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    return f"{h}h {m}m {s}s"
+
+# === LOAD DATA ===
+infractions = load_json(INFRACTION_FILE)
+shifts = load_json(SHIFT_FILE)
+
+# === INFRACTION COMMANDS ===
+@bot.tree.command(name="add_infraction", description="Add an infraction to a user")
+@app_commands.describe(user="User to infract", infraction_type="Type of infraction", reason="Reason for infraction", expires_in_days="Days until infraction expires (optional)")
+async def add_infraction(interaction: discord.Interaction, user: discord.Member, infraction_type: str, reason: str, expires_in_days: int = None):
+    if not has_staff_role(interaction.user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You must have the staff role to use this command.", discord.Color.red()), ephemeral=True)
+        return
+
+    user_id = str(user.id)
+    timestamp = datetime.utcnow().isoformat()
+    expires = None
+    if expires_in_days:
+        expires = (datetime.utcnow() + timedelta(days=expires_in_days)).isoformat()
+
+    if user_id not in infractions:
+        infractions[user_id] = []
+
+    infractions[user_id].append({
+        "type": infraction_type,
+        "reason": reason,
+        "timestamp": timestamp,
+        "expires": expires
+    })
+    save_json(INFRACTION_FILE, infractions)
+
+    # If suspended, remove shift and break roles and clear shifts data
+    if infraction_type.lower() == "suspended":
+        shift_role = get_role(interaction.guild, SHIFT_ROLE_ID_2)
+        break_role = get_role(interaction.guild, BREAK_ROLE_ID_2)
+        if shift_role and shift_role in user.roles:
+            await user.remove_roles(shift_role, reason="Suspended - removing shift role")
+        if break_role and break_role in user.roles:
+            await user.remove_roles(break_role, reason="Suspended - removing break role")
+
+        if user_id in shifts:
+            shifts.pop(user_id)
+            save_json(SHIFT_FILE, shifts)
+
+    exp_text = f"{expires_in_days} day(s)" if expires_in_days else "Never"
+    embed = create_embed("Infraction Added",
+                         f"Added **{infraction_type}** infraction to {user.mention}.\n**Reason:** {reason}\n**Expires in:** {exp_text}",
+                         discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="view_infractions", description="View infractions of a user")
+@app_commands.describe(user="User to view infractions")
+async def view_infractions(interaction: discord.Interaction, user: discord.Member):
+    if not has_staff_role(interaction.user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You must have the staff role to use this command.", discord.Color.red()), ephemeral=True)
+        return
+
+    user_id = str(user.id)
+    user_infractions = infractions.get(user_id, [])
+
+    # Remove expired infractions
+    updated_infractions = [inf for inf in user_infractions if infraction_active(inf)]
+    if len(updated_infractions) != len(user_infractions):
+        infractions[user_id] = updated_infractions
+        save_json(INFRACTION_FILE, infractions)
+        user_infractions = updated_infractions
+
+    if not user_infractions:
+        embed = create_embed("Infractions", f"{user.mention} has no active infractions.", discord.Color.green())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    embed = Embed(title=f"Infractions for {user}", color=discord.Color.orange())
+    for idx, inf in enumerate(user_infractions, 1):
+        exp_text = inf["expires"] if inf["expires"] else "Never"
+        embed.add_field(name=f"{idx}. {inf['type']} (Expires: {exp_text})",
+                        value=f"Reason: {inf['reason']}\nDate: {inf['timestamp']}", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# === SHIFT COMMANDS ===
+def update_total_time(user_id, shift_type, seconds):
+    if user_id not in shifts:
+        shifts[user_id] = {
+            "status": None,
+            "last_action": None,
+            "total_shift_time": 0,
+            "total_break_time": 0,
+            "shift_type_times": {},
+            "current_shift_type": None
+        }
+    user_data = shifts[user_id]
+
+    # Add time to total shift or break
+    if user_data["status"] == "on_shift":
+        user_data["total_shift_time"] = user_data.get("total_shift_time", 0) + seconds
+        if shift_type:
+            prev = user_data["shift_type_times"].get(shift_type, 0)
+            user_data["shift_type_times"][shift_type] = prev + seconds
+    elif user_data["status"] == "on_break":
+        user_data["total_break_time"] = user_data.get("total_break_time", 0) + seconds
+    save_json(SHIFT_FILE, shifts)
+
+@bot.tree.command(name="shift_start", description="Start your shift with a type")
+@app_commands.describe(shift_type="Type of shift (e.g. day, night)")
+async def shift_start(interaction: discord.Interaction, shift_type: str):
+    user = interaction.user
+    user_id = str(user.id)
+
+    if not has_staff_role(user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You need the staff role to start shifts.", discord.Color.red()), ephemeral=True)
+        return
+
+    if has_active_suspension(user_id, infractions):
+        await interaction.response.send_message(embed=create_embed("Suspended", "You are suspended and cannot start a shift.", discord.Color.red()), ephemeral=True)
+        return
+
+    shift_role = get_role(interaction.guild, SHIFT_ROLE_ID_2)
+    break_role = get_role(interaction.guild, BREAK_ROLE_ID_2)
+    if not shift_role or not break_role:
+        await interaction.response.send_message(embed=create_embed("Error", "Shift or break roles are not configured.", discord.Color.red()), ephemeral=True)
+        return
+
+    if shift_role in user.roles:
+        await interaction.response.send_message(embed=create_embed("Info", "You are already on shift.", discord.Color.orange()), ephemeral=True)
+        return
+
+    if break_role in user.roles:
+        await user.remove_roles(break_role, reason="Starting shift removes break role")
+
+    await user.add_roles(shift_role, reason="Started shift")
+    now_iso = datetime.utcnow().isoformat()
+
+    # Update shift info, track start time and shift type
+    if user_id not in shifts:
+        shifts[user_id] = {
+            "status": "on_shift",
+            "last_action": now_iso,
+            "total_shift_time": 0,
+            "total_break_time": 0,
+            "shift_type_times": {},
+            "current_shift_type": shift_type.lower()
+        }
+    else:
+        user_data = shifts[user_id]
+        # Update time elapsed since last action before switching state
+        if user_data["status"] in ("on_shift", "on_break") and user_data["last_action"]:
+            last = datetime.fromisoformat(user_data["last_action"])
+            diff = (datetime.utcnow() - last).total_seconds()
+            update_total_time(user_id, user_data.get("current_shift_type"), diff)
+        user_data["status"] = "on_shift"
+        user_data["last_action"] = now_iso
+        user_data["current_shift_type"] = shift_type.lower()
+
+    save_json(SHIFT_FILE, shifts)
+
+    log_channel = interaction.guild.get_channel(SHIFT_LOG_CHANNEL_ID_2)
+    if log_channel:
+        await log_channel.send(f"{user.mention} started their **{shift_type}** shift.")
+
+    embed = create_embed("Shift Started", f"Shift started as **{shift_type}**. Good luck!", discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="shift_end", description="End your shift")
+async def shift_end(interaction: discord.Interaction):
+    user = interaction.user
+    user_id = str(user.id)
+
+    if not has_staff_role(user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You need the staff role to end shifts.", discord.Color.red()), ephemeral=True)
+        return
+
+    shift_role = get_role(interaction.guild, SHIFT_ROLE_ID_2)
+    if not shift_role:
+        await interaction.response.send_message(embed=create_embed("Error", "Shift role is not configured.", discord.Color.red()), ephemeral=True)
+        return
+
+    if shift_role not in user.roles:
+        await interaction.response.send_message(embed=create_embed("Info", "You are not currently on a shift.", discord.Color.orange()), ephemeral=True)
+        return
+
+    user_data = shifts.get(user_id)
+    if not user_data or user_data["status"] != "on_shift" or not user_data.get("last_action"):
+        await interaction.response.send_message(embed=create_embed("Error", "Could not find your shift session data.", discord.Color.red()), ephemeral=True)
+        return
+
+    last = datetime.fromisoformat(user_data["last_action"])
+    diff = (datetime.utcnow() - last).total_seconds()
+    update_total_time(user_id, user_data.get("current_shift_type"), diff)
+
+    # Clear shift state
+    user_data["status"] = None
+    user_data["last_action"] = None
+    user_data["current_shift_type"] = None
+    save_json(SHIFT_FILE, shifts)
+
+    await user.remove_roles(shift_role, reason="Ended shift")
+
+    log_channel = interaction.guild.get_channel(SHIFT_LOG_CHANNEL_ID_2)
+    if log_channel:
+        await log_channel.send(f"{user.mention} ended their shift.")
+
+    embed = create_embed("Shift Ended", "You have ended your shift. Thank you for your work!", discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="break_start", description="Start your break")
+async def break_start(interaction: discord.Interaction):
+    user = interaction.user
+    user_id = str(user.id)
+
+    if not has_staff_role(user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You need the staff role to start breaks.", discord.Color.red()), ephemeral=True)
+        return
+
+    if has_active_suspension(user_id, infractions):
+        await interaction.response.send_message(embed=create_embed("Suspended", "You are suspended and cannot start a break.", discord.Color.red()), ephemeral=True)
+        return
+
+    shift_role = get_role(interaction.guild, SHIFT_ROLE_ID_2)
+    break_role = get_role(interaction.guild, BREAK_ROLE_ID_2)
+    if not shift_role or not break_role:
+        await interaction.response.send_message(embed=create_embed("Error", "Shift or break roles are not configured.", discord.Color.red()), ephemeral=True)
+        return
+
+    if break_role in user.roles:
+        await interaction.response.send_message(embed=create_embed("Info", "You are already on a break.", discord.Color.orange()), ephemeral=True)
+        return
+
+    if shift_role not in user.roles:
+        await interaction.response.send_message(embed=create_embed("Info", "You are not currently on a shift, cannot start break.", discord.Color.orange()), ephemeral=True)
+        return
+
+    await user.remove_roles(shift_role, reason="Starting break removes shift role")
+    await user.add_roles(break_role, reason="Started break")
+    now_iso = datetime.utcnow().isoformat()
+
+    user_data = shifts.get(user_id)
+    if not user_data:
+        # Defensive fallback
+        user_data = {
+            "status": "on_break",
+            "last_action": now_iso,
+            "total_shift_time": 0,
+            "total_break_time": 0,
+            "shift_type_times": {},
+            "current_shift_type": None
+        }
+        shifts[user_id] = user_data
+    else:
+        # Update elapsed time on shift before switching to break
+        if user_data["status"] == "on_shift" and user_data["last_action"]:
+            last = datetime.fromisoformat(user_data["last_action"])
+            diff = (datetime.utcnow() - last).total_seconds()
+            update_total_time(user_id, user_data.get("current_shift_type"), diff)
+
+        user_data["status"] = "on_break"
+        user_data["last_action"] = now_iso
+        # During break, shift_type is None or keep current_shift_type as is
+        # We keep current_shift_type unchanged so time is tracked on shift types properly
+
+    save_json(SHIFT_FILE, shifts)
+
+    log_channel = interaction.guild.get_channel(SHIFT_LOG_CHANNEL_ID_2)
+    if log_channel:
+        await log_channel.send(f"{user.mention} started their break.")
+
+    embed = create_embed("Break Started", "You have started your break. Relax!", discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="break_end", description="End your break")
+async def break_end(interaction: discord.Interaction):
+    user = interaction.user
+    user_id = str(user.id)
+
+    if not has_staff_role(user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You need the staff role to end breaks.", discord.Color.red()), ephemeral=True)
+        return
+
+    break_role = get_role(interaction.guild, BREAK_ROLE_ID_2)
+    shift_role = get_role(interaction.guild, SHIFT_ROLE_ID_2)
+    if not break_role or not shift_role:
+        await interaction.response.send_message(embed=create_embed("Error", "Shift or break roles are not configured.", discord.Color.red()), ephemeral=True)
+        return
+
+    if break_role not in user.roles:
+        await interaction.response.send_message(embed=create_embed("Info", "You are not currently on a break.", discord.Color.orange()), ephemeral=True)
+        return
+
+    user_data = shifts.get(user_id)
+    if not user_data or user_data["status"] != "on_break" or not user_data.get("last_action"):
+        await interaction.response.send_message(embed=create_embed("Error", "Could not find your break session data.", discord.Color.red()), ephemeral=True)
+        return
+
+    last = datetime.fromisoformat(user_data["last_action"])
+    diff = (datetime.utcnow() - last).total_seconds()
+    update_total_time(user_id, None, diff)  # Break time tracked separately
+
+    # Switch status back to on_shift
+    user_data["status"] = "on_shift"
+    user_data["last_action"] = datetime.utcnow().isoformat()
+    save_json(SHIFT_FILE, shifts)
+
+    await user.remove_roles(break_role, reason="Ended break")
+    await user.add_roles(shift_role, reason="Resuming shift")
+
+    log_channel = interaction.guild.get_channel(SHIFT_LOG_CHANNEL_ID_2)
+    if log_channel:
+        await log_channel.send(f"{user.mention} ended their break and resumed shift.")
+
+    embed = create_embed("Break Ended", "Your break has ended. Welcome back to your shift!", discord.Color.green())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# === LEADERBOARD COMMAND ===
+@bot.tree.command(name="shift_leaderboard", description="Show leaderboard of most time on shift and break")
+async def shift_leaderboard(interaction: discord.Interaction):
+    if not has_staff_role(interaction.user):
+        await interaction.response.send_message(embed=create_embed("Permission Denied", "You must have the staff role to use this command.", discord.Color.red()), ephemeral=True)
+        return
+
+    # Before displaying, update current user's ongoing time to be accurate
+    now = datetime.utcnow()
+    for user_id, data in shifts.items():
+        if data["status"] in ("on_shift", "on_break") and data.get("last_action"):
+            last = datetime.fromisoformat(data["last_action"])
+            diff = (now - last).total_seconds()
+            update_total_time(user_id, data.get("current_shift_type"), diff)
+            data["last_action"] = now.isoformat()
+
+    # Sort users by total shift time descending
+    sorted_shift = sorted(shifts.items(), key=lambda x: x[1].get("total_shift_time", 0), reverse=True)
+    sorted_break = sorted(shifts.items(), key=lambda x: x[1].get("total_break_time", 0), reverse=True)
+
+    embed = Embed(title="Shift Leaderboard", color=discord.Color.gold())
+
+    def make_top_list(sorted_list, time_key, title):
+        lines = []
+        for i, (uid, data) in enumerate(sorted_list[:10], 1
 
 
 
