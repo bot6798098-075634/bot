@@ -560,44 +560,32 @@ async def remindme_slash(interaction: discord.Interaction, time: int, reminder: 
 
 
 
-class MyBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents)
+# Slash command to send last 20 lines from error.log
+@bot.tree.command(name="error_logs", description="View the latest error logs from the bot.")
+async def error_logs(interaction: discord.Interaction):
+    file_path = "error.log"  # Your log file name
 
-    async def setup_hook(self):
-        # Register commands with the tree
-        self.tree.add_command(error_logs_command)
-
-bot = MyBot()
-
-# Define the slash command
-@app_commands.command(name="error_logs", description="Show recent error logs")
-async def error_logs_command(interaction: discord.Interaction):
-    log_file = "error.log"  # path to your error log file
     try:
-        with open(log_file, "r") as f:
+        with open(file_path, "r") as f:
             lines = f.readlines()
     except FileNotFoundError:
-        await interaction.response.send_message("Error log file not found.", ephemeral=True)
+        await interaction.response.send_message("⚠️ `error.log` not found.", ephemeral=True)
         return
 
-    # Get the last 20 lines
-    last_lines = lines[-20:] if len(lines) >= 20 else lines
-    log_content = "".join(last_lines)
+    last_lines = lines[-20:] if len(lines) > 20 else lines
+    log_text = "".join(last_lines)
 
-    # Discord embed has a max description length of 4096, truncate if needed
-    if len(log_content) > 4000:
-        log_content = log_content[-4000:]  # take last 4000 chars to fit embed
+    if len(log_text) > 4000:
+        log_text = log_text[-4000:]  # Truncate to fit in embed
 
     embed = discord.Embed(
-        title="Recent Error Logs",
-        description=f"```log\n{log_content}\n```",
+        title="🧾 Latest Error Logs",
+        description=f"```log\n{log_text}\n```",
         color=discord.Color.red()
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 
 
