@@ -4365,6 +4365,72 @@ async def help_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+# prefix command for help
+@bot.command(name="help", description="Show all available commands and their descriptions")
+async def help_prefix(ctx):
+    embed = discord.Embed(
+        title="Bot Commands List",
+        description="Explore the available commands grouped by category. Use `/command [command name]` for more details.",
+        color=discord.Color.blurple()
+    )
+
+    # General commands
+    embed.add_field(
+        name="**🛠️ General**",
+        value="`ping`, `say`, `embed`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # Moderation commands
+    embed.add_field(
+        name="**⚙️ Moderation**",
+        value="`slowmode`, `clear`, `nickname`, `warn`, `warnings`, `unwarn`, `clear_all_warnings`, `shutdown`, "
+              "`kick`, `ban`, `unban`, `mute`, `unmute`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # ER:LC Management commands
+    embed.add_field(
+        name="**🚨 ER:LC Management**",
+        value="`session vote`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # Channel Management commands
+    embed.add_field(
+        name="**🔒 Channel Management**",
+        value="`lock`, `unlock`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # AFK Management commands
+    embed.add_field(
+        name="**⏰ AFK Management**",
+        value="`afk`, `unafk`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # Other commands part 1
+    embed.add_field(
+        name="**💼 Other (Part 1)**",
+        value="`roleinfo`, `invite`, `server_info`, `user_info`, `remindme`, "
+              "`servericon`, `suggestion`, `staff_suggestion`, `staff_feedback`, "
+              "`events`\nUse `/command [command name]` for more details.",
+        inline=False
+    )
+
+    # Other commands part 2
+    embed.add_field(
+        name="**💼 Other (Part 2)**",
+        value="`event`, `mod_panel`, `report`, `poll`, `setreportticket`, "
+              "`settickets`, `up_time`, `dm`\nUse "
+                "`/command [command name]` for more details.",
+        inline=False
+    )
+    embed.set_footer(text="The SWAT Roleplay Community | Use `/command [command name]` for more details.")
+    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1234567890/1234567890/thumbnail_image.png")
+    await ctx.send(embed=embed)
+
 @bot.tree.command(name="command", description="Get detailed help for a specific command")
 async def command_help_slash(interaction: discord.Interaction, command_name: str):
     command_name = command_name.lower()
@@ -4439,5 +4505,75 @@ async def command_help_slash(interaction: discord.Interaction, command_name: str
         await interaction.response.send_message(
             f"Sorry, no detailed information found for `/command {command_name}`."
         )
+
+# prefix command for detailed help
+@bot.command(name="command", description="Get detailed help for a specific command")
+async def command_help_prefix(ctx, command_name: str):
+    command_name = command_name.lower()
+
+    # Dictionary of commands with detailed descriptions
+    command_details = {
+        "ping": "Ping the bot to check if it's online.",
+        "help": "Show all available commands and their descriptions.",
+        "command": "Get detailed help for a specific command.",
+        "say": "Let the bot repeat a message of your choice.",
+        "embed": "Create a custom embed message with specified fields.",
+        "slowmode": "Set slowmode in a channel to restrict message frequency.",
+        "clear": "Clear a specified number of messages in a channel.",
+        "kick": "Kick a member from the server.",
+        "ban": "Ban a member from the server.",
+        "unban": "Unban a member from the server.",
+        "mute": "Mute a member so they can't send messages.",
+        "unmute": "Unmute a member to allow them to send messages.",
+        "giverole": "Give a role to a member.",
+        "removerole": "Remove a role from a member.",
+        "muteall": "Mute all members in the server.",
+        "unmuteall": "Unmute all members in the server.",
+        "lock": "Lock the current channel so no one can send messages.",
+        "unlock": "Unlock the current channel to allow messages.",
+        "lockdown": "Lock all channels in the server.",
+        "stop_lockdown": "Unlock all channels in the server.",
+        "afk": "Set yourself as AFK.",
+        "unafk": "Remove your AFK status.",
+        "roleinfo": "Get information about a specific role.",
+        "invite": "Get the invite link for the bot.",
+        "server_info": "Get information about the server.",
+        "user_info": "Get information about a specific user.",
+        "poll": "Create a poll to ask the server a question.",
+        "remindme": "Set a reminder that notifies you at a specified time.",
+        "servericon": "Get the server's icon.",
+        "suggestion": "Submit a suggestion for the bot or server.",
+        "staff_feedback": "Submit feedback for a staff member.",
+        "events": "View upcoming events.",
+        "event": "Create an event.",
+        "shutdown": "Shut down the bot (OWNER ONLY).",
+        "clear_all_warnings": "Clear all warnings for a member.",
+        "nickname": "Change a user's nickname.",
+        "warn": "Warn a member for breaking the rules.",
+        "warnings": "View all warnings for a member.",
+        "unwarn": "Remove a specific warning from a member.",
+        "staff_suggestion": "Submit a suggestion only visible to staff.",
+        "mod_panel": "Open a panel with moderator tools.",
+        "report": "Report a user to the moderation team.",
+        "setreportticket": "Send the In-Game Report ticket buttons.",
+        "settickets": "Send support ticket buttons for various topics.",
+        "up_time": "Show how long the bot has been running.",
+        "dm": "Send yourself a DM with embed/message builder tools.",
+        "session vote": "Start a vote for an ER:LC session action.",
+    }
+    # Try to match the command name
+    matching = [name for name in command_details if command_name in name]
+    if len(matching) == 1:
+        cmd = matching[0]
+        embed = discord.Embed(
+            title=f"Help: /{cmd}",
+            description=command_details[cmd],
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
+    elif len(matching) > 1:
+        await ctx.send(f"Multiple matches found: {', '.join(matching)}. Please be more specific.")
+    else:
+        await ctx.send(f"Sorry, no detailed information found for `/command {command_name}`.")
 
 bot.run(os.getenv("DISCORD_TOKEN"))
