@@ -26,19 +26,6 @@ from discord import app_commands, ui
 import re, io
 import datetime
 from threading import Thread
-from web import app
-import discord
-from discord.ext import commands
-from threading import Thread
-from web import app  # import the Flask app
-
-
-# Run Flask in the background
-def run_web():
-    app.run(host='0.0.0.0', port=10000)
-
-Thread(target=run_web).start()
-
 
 from datetime import datetime, timezone
 from datetime import timezone
