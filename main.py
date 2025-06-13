@@ -33,7 +33,6 @@ from keep_alive import keep_alive
 
 keep_alive()  # Starts the web server
 
-
 UTC = timezone.utc
 
 logging.basicConfig(level=logging.INFO)
