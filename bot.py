@@ -29,6 +29,10 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=".", intents=intents)
 tree = bot.tree
 
+# ──────────── Remove the help command ────────────
+# Remove the default help command so we can define our own
+bot.remove_command("help")
+
 # ──────────── Logging ────────────
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bot")
