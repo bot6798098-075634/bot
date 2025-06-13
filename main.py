@@ -593,35 +593,27 @@ async def error_logs(interaction: discord.Interaction):
 
 
 
-# Set launch time
-bot.launch_time = datetime.utcnow()
 
-# In your command
-uptime = datetime.utcnow() - bot.launch_time
 
-@bot.tree.command(name="info", description="Shows information about SRPC Management bot")
+
+@bot.tree.command(name="info", description="Show info about the bot")
 async def info(interaction: discord.Interaction):
-    uptime = datetime.utcnow() - bot.launch_time
+    uptime = datetime.now(timezone.utc) - bot.launch_time
+
     embed = discord.Embed(
-        title="📊 SRPC Management - Bot Info",
-        description="Here's everything you need to know about me!",
-        color=discord.Color.green(),
-        timestamp=datetime.datetime.utcnow()
+        title="🤖 Bot Information",
+        color=discord.Color.blurple(),
+        timestamp=datetime.now(timezone.utc)
     )
-    embed.add_field(name="🤖 Bot Name", value=bot.user.name, inline=True)
-    embed.add_field(name="🆔 Bot ID", value=str(bot.user.id), inline=True)
-    embed.add_field(name="🌐 Servers", value=str(len(bot.guilds)), inline=True)
-    embed.add_field(name="📶 Ping", value=f"{round(bot.latency * 1000)}ms", inline=True)
-    embed.add_field(name="⏱️ Uptime", value=str(uptime).split('.')[0], inline=True)
-    embed.add_field(name="👤 Created By", value="YourNameHere", inline=True)
+    embed.add_field(name="Name", value=bot.user.name, inline=True)
+    embed.add_field(name="ID", value=str(bot.user.id), inline=True)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Ping", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="Uptime", value=str(uptime).split('.')[0], inline=True)
     embed.set_thumbnail(url=bot.user.display_avatar.url)
-    embed.set_footer(text="SRPC Management • Discord Bot")
+    embed.set_footer(text="Made by YourName")
 
     await interaction.response.send_message(embed=embed)
-
-
-
-
 
 
 
