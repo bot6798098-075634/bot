@@ -614,9 +614,6 @@ SHIFT_LOG_CHANNEL_ID = 1381409066156425236
 INFRACTION_FILE = "infractions.json"
 SHIFT_DATA_FILE = "shift_data.json"
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
-
 # Helper embeds
 def create_embed(title, description, color=discord.Color.blue()):
     return discord.Embed(title=title, description=description, color=color)
