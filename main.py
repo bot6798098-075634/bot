@@ -39,6 +39,8 @@ UTC = timezone.utc
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+logging.basicConfig(filename='error.log', level=logging.ERROR)
+
 load_dotenv()  # This loads the .env file
 
 # Define intents to specify the events your bot should listen to
