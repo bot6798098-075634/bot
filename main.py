@@ -560,6 +560,52 @@ async def remindme_slash(interaction: discord.Interaction, time: int, reminder: 
 
 
 
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self):
+        # Register commands with the tree
+        self.tree.add_command(error_logs_command)
+
+bot = MyBot()
+
+# Define the slash command
+@app_commands.command(name="error_logs", description="Show recent error logs")
+async def error_logs_command(interaction: discord.Interaction):
+    log_file = "error.log"  # path to your error log file
+    try:
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        await interaction.response.send_message("Error log file not found.", ephemeral=True)
+        return
+
+    # Get the last 20 lines
+    last_lines = lines[-20:] if len(lines) >= 20 else lines
+    log_content = "".join(last_lines)
+
+    # Discord embed has a max description length of 4096, truncate if needed
+    if len(log_content) > 4000:
+        log_content = log_content[-4000:]  # take last 4000 chars to fit embed
+
+    embed = discord.Embed(
+        title="Recent Error Logs",
+        description=f"```log\n{log_content}\n```",
+        color=discord.Color.red()
+    )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+
+
+
+
+
+
 
 
 
