@@ -60,6 +60,7 @@ tree = bot.tree
 
 @bot.event
 async def on_ready():
+    await bot.tree.sync()
     bot.start_time = datetime.now(timezone.utc)
 
     # Only sync guild-specific commands
