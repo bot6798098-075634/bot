@@ -593,11 +593,15 @@ async def error_logs(interaction: discord.Interaction):
 
 
 
+# Set launch time
+bot.launch_time = datetime.utcnow()
 
+# In your command
+uptime = datetime.utcnow() - bot.launch_time
 
 @bot.tree.command(name="info", description="Shows information about SRPC Management bot")
 async def info(interaction: discord.Interaction):
-    uptime = datetime.datetime.utcnow() - bot.launch_time
+    uptime = datetime.utcnow() - bot.launch_time
     embed = discord.Embed(
         title="📊 SRPC Management - Bot Info",
         description="Here's everything you need to know about me!",
