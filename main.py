@@ -2803,34 +2803,49 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
     emoji = "<:error:1383587321294884975>"
 
     messages = {
-        100: f"{emoji} **100 – Continue**: The server has received the request headers, and the client should proceed.",
-        101: f"{emoji} **101 – Switching Protocols**: Protocol switching in progress.",
-        200: f"{emoji} **200 – OK**: The request was successful.",
-        201: f"{emoji} **201 – Created**: The request has been fulfilled and a new resource was created.",
-        204: f"{emoji} **204 – No Content**: The server successfully processed the request but returned no content.",
-        400: f"{emoji} **400 – Bad Request**: The server couldn't understand the request due to invalid syntax.",
-        401: f"{emoji} **401 – Unauthorized**: Authentication is required or has failed.",
-        403: f"{emoji} **403 – Forbidden**: You do not have permission to access this resource.",
-        404: f"{emoji} **404 – Not Found**: The requested resource could not be found.",
-        405: f"{emoji} **405 – Method Not Allowed**: The HTTP method is not allowed for this endpoint.",
-        408: f"{emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
-        409: f"{emoji} **409 – Conflict**: The request could not be processed because of a conflict.",
-        410: f"{emoji} **410 – Gone**: The resource requested is no longer available.",
-        415: f"{emoji} **415 – Unsupported Media Type**: The server does not support the media type.",
-        418: f"{emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
-        429: f"{emoji} **429 – Too Many Requests**: You are being rate limited.",
-        500: f"{emoji} **500 – Internal Server Error**: An unexpected condition was encountered.",
-        501: f"{emoji} **501 – Not Implemented**: The server does not recognize the request method.",
-        502: f"{emoji} **502 – Bad Gateway**: The server received an invalid response from the upstream server.",
-        503: f"{emoji} **503 – Service Unavailable**: The server is not ready to handle the request.",
-        504: f"{emoji} **504 – Gateway Timeout**: The server did not get a response in time.",
+        0:    f"{emoji} **0 – Unknown Error**: Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
+        100:  f"{emoji} **100 – Continue**: The server has received the request headers, and the client should proceed.",
+        101:  f"{emoji} **101 – Switching Protocols**: Protocol switching in progress.",
+        200:  f"{emoji} **200 – OK**: The request was successful.",
+        201:  f"{emoji} **201 – Created**: The request has been fulfilled and a new resource was created.",
+        204:  f"{emoji} **204 – No Content**: The server successfully processed the request but returned no content.",
+        400:  f"{emoji} **400 – Bad Request**: Bad request.",
+        401:  f"{emoji} **401 – Unauthorized**: Authentication is required or has failed.",
+        403:  f"{emoji} **403 – Unauthorized**: Unauthorized access.",
+        404:  f"{emoji} **404 – Not Found**: The requested resource could not be found.",
+        405:  f"{emoji} **405 – Method Not Allowed**: The HTTP method is not allowed for this endpoint.",
+        408:  f"{emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
+        409:  f"{emoji} **409 – Conflict**: The request could not be processed because of a conflict.",
+        410:  f"{emoji} **410 – Gone**: The resource requested is no longer available.",
+        415:  f"{emoji} **415 – Unsupported Media Type**: The server does not support the media type.",
+        418:  f"{emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
+        422:  f"{emoji} **422 – No Players**: The private server has no players in it.",
+        429:  f"{emoji} **429 – Too Many Requests**: You are being rate limited.",
+        500:  f"{emoji} **500 – Internal Server Error**: Problem communicating with Roblox.",
+        501:  f"{emoji} **501 – Not Implemented**: The server does not recognize the request method.",
+        502:  f"{emoji} **502 – Bad Gateway**: The server received an invalid response from the upstream server.",
+        503:  f"{emoji} **503 – Service Unavailable**: The server is not ready to handle the request.",
+        504:  f"{emoji} **504 – Gateway Timeout**: The server did not get a response in time.",
+        1001: f"{emoji} **1001 – Communication Error**: An error occurred communicating with Roblox / the in-game private server.",
+        1002: f"{emoji} **1002 – System Error**: An internal system error occurred.",
+        2000: f"{emoji} **2000 – Missing Server Key**: You did not provide a server-key.",
+        2001: f"{emoji} **2001 – Bad Server Key Format**: You provided an incorrectly formatted server-key.",
+        2002: f"{emoji} **2002 – Invalid Server Key**: You provided an invalid (or expired) server-key.",
+        2003: f"{emoji} **2003 – Invalid Global API Key**: You provided an invalid global API key.",
+        2004: f"{emoji} **2004 – Banned Server Key**: Your server-key is currently banned from accessing the API.",
+        3001: f"{emoji} **3001 – Missing Command**: You did not provide a valid command in the request body.",
+        3002: f"{emoji} **3002 – Server Offline**: The server you are attempting to reach is currently offline (has no players).",
+        4001: f"{emoji} **4001 – Rate Limited**: You are being rate limited.",
+        4002: f"{emoji} **4002 – Command Restricted**: The command you are attempting to run is restricted.",
+        4003: f"{emoji} **4003 – Prohibited Message**: The message you're trying to send is prohibited.",
+        9998: f"{emoji} **9998 – Resource Restricted**: The resource you are accessing is restricted.",
+        9999: f"{emoji} **9999 – Module Outdated**: The module running on the in-game server is out of date, please kick all and try again.",
     }
 
     base_message = messages.get(http_status, f"{emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
     if api_code:
         base_message += f"\nAPI code: {api_code}"
     return base_message
-
 
 # === PRC COMMAND ===
 @bot.tree.command(name="erlc_command", description="Run a server command like :h, :m, :mod")
