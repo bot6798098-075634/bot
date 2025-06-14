@@ -29,6 +29,8 @@ from threading import Thread
 from datetime import datetime, timezone
 from datetime import timezone
 from keep_alive import keep_alive
+import typing
+import atexit
 
 keep_alive()  # Starts the web server
 
@@ -2761,7 +2763,7 @@ async def setreportticket(interaction: discord.Interaction):
 
 
 
-
+API_KEY = ("API_KEY")
 
 
 PRIV_ROLE_ID = 1346578198749511700
@@ -2779,7 +2781,7 @@ ERROR_COLOR = discord.Color.red()
 INFO_COLOR = discord.Color.blue()
 
 
-API_KEY = os.getenv("API_KEY")
+
 
 API_BASE = "https://api.policeroleplay.community/v1/server"
 HEADERS_GET = {
@@ -5453,4 +5455,4 @@ async def command_help_prefix(ctx, command_name: str):
     else:
         await ctx.send(f"Sorry, no detailed information found for `/command {command_name}`.")
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+bot.run("DISCORD_TOKEN")
