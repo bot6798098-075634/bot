@@ -2769,7 +2769,8 @@ async def setreportticket(interaction: discord.Interaction):
 
 
 
-API_KEY = ("API_KEY")
+API_KEY = os.getenv("API_KEY")
+
 
 
 PRIV_ROLE_ID = 1346578198749511700
