@@ -3566,30 +3566,84 @@ async def on_interaction(interaction: discord.Interaction):
 
 
 
+
+# Join voice channel command
 @bot.tree.command(name="join_voice_channel", description="Make the bot join your voice channel")
 async def join_voice_channel(interaction: discord.Interaction):
-    if not interaction.user.voice or not interaction.user.voice.channel:
-        await interaction.response.send_message("❌ You are not in a voice channel.", ephemeral=True)
+    voice_state = interaction.user.voice
+    if not voice_state or not voice_state.channel:
+        await interaction.response.send_message("❌ You are not connected to any voice channel.", ephemeral=True)
         return
 
-    channel = interaction.user.voice.channel
+    channel = voice_state.channel
+    voice_client = interaction.guild.voice_client
 
-    if interaction.guild.voice_client:
-        await interaction.guild.voice_client.move_to(channel)
+    if voice_client:
+        if voice_client.channel.id == channel.id:
+            await interaction.response.send_message(f"✅ I'm already connected to **{channel.name}**.", ephemeral=True)
+            return
+        try:
+            await voice_client.move_to(channel)
+            await interaction.response.send_message(f"✅ Moved to **{channel.name}**.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to move: {e}", ephemeral=True)
     else:
-        await channel.connect()
+        try:
+            await channel.connect()
+            await interaction.response.send_message(f"✅ Joined **{channel.name}**.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
 
-    await interaction.response.send_message(f"✅ Joined **{channel.name}**.", ephemeral=True)
-
+# Leave voice channel command
 @bot.tree.command(name="leave_voice_channel", description="Make the bot leave its current voice channel")
 async def leave_voice_channel(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if voice_client and voice_client.is_connected():
-        await voice_client.disconnect()
-        await interaction.response.send_message("👋 Left the voice channel.", ephemeral=True)
+        try:
+            await voice_client.disconnect()
+            await interaction.response.send_message("👋 Left the voice channel.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ I'm not in a voice channel.", ephemeral=True)
+        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
+
+# Additional commands
+
+@bot.tree.command(name="pause_voice", description="Pause the currently playing audio")
+async def pause_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_playing():
+        voice_client.pause()
+        await interaction.response.send_message("⏸️ Paused the audio.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ No audio is currently playing.", ephemeral=True)
+
+@bot.tree.command(name="resume_voice", description="Resume paused audio")
+async def resume_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_paused():
+        voice_client.resume()
+        await interaction.response.send_message("▶️ Resumed the audio.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ No audio is currently paused.", ephemeral=True)
+
+@bot.tree.command(name="stop_voice", description="Stop the audio and disconnect from voice channel")
+async def stop_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client:
+        if voice_client.is_playing() or voice_client.is_paused():
+            voice_client.stop()
+        try:
+            await voice_client.disconnect()
+            await interaction.response.send_message("🛑 Stopped and left the voice channel.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
 
 
 
