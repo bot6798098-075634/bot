@@ -3680,18 +3680,22 @@ async def teams(interaction: discord.Interaction, filter: typing.Optional[str] =
 
     await interaction.followup.send(embed=embed)
 
+session = None  # aiohttp.ClientSession, should be initialized elsewhere
+
 async def prc_get(endpoint):
     global session
     if session is None:
         raise Exception("HTTP session not initialized")
     headers = {"server-key": API_KEY, "Accept": "*/*"}
-    url = f"{API_BASE}{endpoint}"
+    url = f"{API_BASE2}{endpoint}"  # Changed here
+    print(f"Fetching PRC endpoint: {url}")  # Helpful for debugging
     async with session.get(url, headers=headers) as resp:
         if resp.status == 200:
             return await resp.json()
         else:
             text = await resp.text()
             raise Exception(f"PRC API error {resp.status}: {text}")
+
 
 @bot.tree.command(name="erlc_vehicles2", description="Show vehicles currently in the server")
 async def vehicles(interaction: discord.Interaction):
@@ -3722,14 +3726,12 @@ async def vehicles(interaction: discord.Interaction):
 
     description_lines = []
     for veh, plr in matched:
-        username = plr['Player'].split(":")[0]
-        roblox_id = plr['Player'].split(":")[1]
+        username, roblox_id = plr['Player'].split(":")
         description_lines.append(f"[{username}](https://roblox.com/users/{roblox_id}/profile) - {veh['Name']} **({veh['Texture']})**")
 
-    description = "\n".join(description_lines)
     embed = discord.Embed(
         title=f"Server Vehicles [{len(vehicles)}/{len(players)}]",
-        description=description,
+        description="\n".join(description_lines),
         color=discord.Color.blue()
     )
     if interaction.guild and interaction.guild.icon:
@@ -3738,16 +3740,13 @@ async def vehicles(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
+
 @bot.tree.command(name="discord_check", description="Check if players in ER:LC are in Discord")
 async def check(interaction: discord.Interaction):
     await interaction.response.defer()
 
     def extract_roblox_name(name: str) -> str:
-        # If the name contains " | ", take the part after it; else the whole name
-        if " | " in name:
-            return name.split(" | ", 1)[1].lower()
-        else:
-            return name.lower()
+        return name.split(" | ", 1)[1].lower() if " | " in name else name.lower()
 
     try:
         players = await prc_get("/server/players")
@@ -3756,7 +3755,7 @@ async def check(interaction: discord.Interaction):
 
     if not players:
         embed = discord.Embed(
-            title="players in ER:LC are not Discord",
+            title="Players in ER:LC not in Discord",
             description="> No players found in the server.",
             color=discord.Color.blue()
         )
@@ -3765,25 +3764,23 @@ async def check(interaction: discord.Interaction):
         embed.set_footer(text="SWAT Roleplay Community")
         return await interaction.followup.send(embed=embed)
 
-    # Build a set of roblox usernames extracted from Discord members
-    roblox_names_in_discord = set()
-    for member in interaction.guild.members:
-        for name_source in (member.name, member.display_name):
-            roblox_name = extract_roblox_name(name_source)
-            roblox_names_in_discord.add(roblox_name)
+    roblox_names_in_discord = {
+        extract_roblox_name(name)
+        for member in interaction.guild.members
+        for name in (member.name, member.display_name)
+    }
 
     missing_players = []
     for player in players:
-        roblox_username = player['Player'].split(":", 1)[0].lower()
-        roblox_id = player['Player'].split(":", 1)[1]
-
-        if roblox_username not in roblox_names_in_discord:
+        roblox_username, roblox_id = player['Player'].split(":", 1)
+        if roblox_username.lower() not in roblox_names_in_discord:
             missing_players.append((roblox_username, roblox_id))
 
-    if not missing_players:
-        description = "> All players are in the Discord server."
-    else:
-        description = "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
+    description = (
+        "> All players are in the Discord server."
+        if not missing_players
+        else "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
+    )
 
     embed = discord.Embed(
         title="Players in ER:LC Not in Discord",
