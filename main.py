@@ -62,12 +62,6 @@ tree = bot.tree
 
 @bot.event
 async def on_ready():
-    global session
-
-    # Initialize HTTP session
-    if session is None or session.closed:
-        session = aiohttp.ClientSession()
-
     # Sync all commands
     await bot.tree.sync()  # Global sync
     await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild-specific sync
