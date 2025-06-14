@@ -5455,4 +5455,4 @@ async def command_help_prefix(ctx, command_name: str):
     else:
         await ctx.send(f"Sorry, no detailed information found for `/command {command_name}`.")
 
-bot.run("DISCORD_TOKEN")
+bot.run((os.getenv("DISCORD_TOKEN")))  # Ensure you have your bot token set in the environment variable DISCORD_TOKEN
