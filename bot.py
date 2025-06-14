@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-from web import keep_alive  # Single function now handles web + keep alive
+from web import keep_alive  # Import the keep_alive function
 
 # ───────────── Start Web Keep-Alive ─────────────
 keep_alive()
@@ -61,6 +61,7 @@ async def on_ready():
     logger.info("─────────────────────────────────────────────")
 
 # ───────────── Load All Cogs ─────────────
+import os
 for filename in os.listdir("./cogs"):
     if filename.endswith(".py") and not filename.startswith("__"):
         try:
