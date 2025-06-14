@@ -2764,11 +2764,11 @@ async def setreportticket(interaction: discord.Interaction):
 
 
 
-PRIV_ROLE_ID = 1316076187893891083
+PRIV_ROLE_ID = 1346578198749511700
 PRC_API_URL = "https://api.policeroleplay.community/v1/server/command"
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-STAFF_ROLE_ID = 1316076193459474525  # Your staff role ID
-LOGS_CHANNEL_ID = 1382851871118590073
+STAFF_ROLE_ID = 1343234687505530902  # Your staff role ID
+LOGS_CHANNEL_ID = 1381267054354632745
 HEADERS = {"server-key": API_KEY}
 ENDPOINTS = ["modcalls", "killlogs", "joinlogs"]
 API_SERVER = "https://api.policeroleplay.community/v1/server"
