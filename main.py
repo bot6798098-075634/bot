@@ -62,11 +62,17 @@ tree = bot.tree
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    bot.start_time = datetime.now(timezone.utc)
+    global session
 
-    # Only sync guild-specific commands
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+    # Initialize HTTP session
+    if session is None or session.closed:
+        session = aiohttp.ClientSession()
+
+    # Sync all commands
+    await bot.tree.sync()  # Global sync
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild-specific sync
+
+    bot.start_time = datetime.now(timezone.utc)
 
     # Start background tasks
     join_leave_log_task.start()
@@ -76,7 +82,7 @@ async def on_ready():
     update_vc_status.start()
     check_staff_livery.start()
 
-
+    # Set bot presence
     await bot.change_presence(
         status=discord.Status.dnd,
         activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
@@ -3551,8 +3557,6 @@ async def teams(interaction: discord.Interaction, filter: typing.Optional[str] =
     await interaction.followup.send(embed=embed)
 
 
-
-
 async def prc_get(endpoint):
     global session
     if session is None:
@@ -3565,6 +3569,9 @@ async def prc_get(endpoint):
         else:
             text = await resp.text()
             raise Exception(f"PRC API error {resp.status}: {text}")
+
+
+# ======================== VEHICLE CHECK ========================
 
 @bot.tree.command(name="erlc_vehicles", description="Show vehicles currently in the server")
 async def vehicles(interaction: discord.Interaction):
@@ -3587,40 +3594,35 @@ async def vehicles(interaction: discord.Interaction):
         return await interaction.followup.send(embed=embed)
 
     players_dict = {p['Player'].split(":")[0]: p for p in players}
-    matched = []
-    for vehicle in vehicles:
-        owner = vehicle.get("Owner")
-        if owner in players_dict:
-            matched.append((vehicle, players_dict[owner]))
+    matched = [
+        (vehicle, players_dict[vehicle.get("Owner")])
+        for vehicle in vehicles if vehicle.get("Owner") in players_dict
+    ]
 
-    description_lines = []
-    for veh, plr in matched:
-        username = plr['Player'].split(":")[0]
-        roblox_id = plr['Player'].split(":")[1]
-        description_lines.append(f"[{username}](https://roblox.com/users/{roblox_id}/profile) - {veh['Name']} **({veh['Texture']})**")
+    description_lines = [
+        f"[{plr['Player'].split(':')[0]}](https://roblox.com/users/{plr['Player'].split(':')[1]}/profile) - {veh['Name']} **({veh['Texture']})**"
+        for veh, plr in matched
+    ]
 
-    description = "\n".join(description_lines)
     embed = discord.Embed(
         title=f"Server Vehicles [{len(vehicles)}/{len(players)}]",
-        description=description,
+        description="\n".join(description_lines),
         color=discord.Color.blue()
     )
     if interaction.guild and interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
-
     await interaction.followup.send(embed=embed)
+
+
+# ======================== DISCORD NAME CHECK ========================
 
 @bot.tree.command(name="discord_check", description="Check if players in ER:LC are in Discord")
 async def check(interaction: discord.Interaction):
     await interaction.response.defer()
 
     def extract_roblox_name(name: str) -> str:
-        # If the name contains " | ", take the part after it; else the whole name
-        if " | " in name:
-            return name.split(" | ", 1)[1].lower()
-        else:
-            return name.lower()
+        return name.split(" | ", 1)[1].lower() if " | " in name else name.lower()
 
     try:
         players = await prc_get("/server/players")
@@ -3629,7 +3631,7 @@ async def check(interaction: discord.Interaction):
 
     if not players:
         embed = discord.Embed(
-            title="players in ER:LC are not Discord",
+            title="Players in ER:LC Not in Discord",
             description="> No players found in the server.",
             color=discord.Color.blue()
         )
@@ -3638,25 +3640,25 @@ async def check(interaction: discord.Interaction):
         embed.set_footer(text="SWAT Roleplay Community")
         return await interaction.followup.send(embed=embed)
 
-    # Build a set of roblox usernames extracted from Discord members
-    roblox_names_in_discord = set()
-    for member in interaction.guild.members:
-        for name_source in (member.name, member.display_name):
-            roblox_name = extract_roblox_name(name_source)
-            roblox_names_in_discord.add(roblox_name)
+    roblox_names_in_discord = {
+        extract_roblox_name(name_source)
+        for member in interaction.guild.members
+        for name_source in (member.name, member.display_name)
+    }
 
-    missing_players = []
-    for player in players:
-        roblox_username = player['Player'].split(":", 1)[0].lower()
-        roblox_id = player['Player'].split(":", 1)[1]
-
-        if roblox_username not in roblox_names_in_discord:
-            missing_players.append((roblox_username, roblox_id))
+    missing_players = [
+        (player['Player'].split(":")[0], player['Player'].split(":")[1])
+        for player in players
+        if player['Player'].split(":")[0].lower() not in roblox_names_in_discord
+    ]
 
     if not missing_players:
         description = "> All players are in the Discord server."
     else:
-        description = "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
+        description = "\n".join(
+            f"> [{username}](https://roblox.com/users/{roblox_id}/profile)"
+            for username, roblox_id in missing_players
+        )
 
     embed = discord.Embed(
         title="Players in ER:LC Not in Discord",
@@ -3666,21 +3668,19 @@ async def check(interaction: discord.Interaction):
     if interaction.guild and interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
-
     await interaction.followup.send(embed=embed)
 
-# Close aiohttp session on exit
-@atexit.register
-def close_session():
-    if session and not session.closed:
-        bot.loop.run_until_complete(session.close())
+
+# ======================== PRC COMMAND EXECUTION ========================
 
 @bot.tree.command(name="erlc_command2", description="Run a PRC command on your ER:LC server")
 @app_commands.describe(command="The command to send (e.g. :h Hello!)")
 async def command(interaction: discord.Interaction, command: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
-    # Permissions
+    if not isinstance(interaction.user, discord.Member):
+        return await interaction.followup.send("This command can only be used in a server.")
+
     has_staff = any(role.id == STAFF_ROLE_ID for role in interaction.user.roles)
     has_priv = any(role.id == PRIV_ROLE_ID for role in interaction.user.roles)
 
@@ -3702,19 +3702,17 @@ async def command(interaction: discord.Interaction, command: str):
     if not command.startswith(":"):
         command = ":" + command
 
-    # Send to PRC API
     try:
-        url = "https://api.policeroleplay.community/v1/server/command"
+        url = f"{API_BASE}/server/command"
         headers = {
             "server-key": API_KEY,
             "Content-Type": "application/json"
         }
-        payload = {"erlc_command2": command}
+        payload = {"command": command}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                status = resp.status
-                response_text = await resp.text()
+        async with session.post(url, headers=headers, json=payload) as resp:
+            status = resp.status
+            response_text = await resp.text()
 
         if status == 200:
             result = "✅ Successfully Ran"
@@ -3731,7 +3729,6 @@ async def command(interaction: discord.Interaction, command: str):
                 interaction.guild
             ))
 
-        # Log to channel
         log_channel = interaction.guild.get_channel(LOGS_CHANNEL_ID)
         if log_channel:
             embed = discord.Embed(title="📄 Command Log", color=discord.Color.blue())
@@ -3756,7 +3753,8 @@ async def command(interaction: discord.Interaction, command: str):
             interaction.guild
         ))
 
-# ===== Embed Helpers =====
+
+# ======================== EMBED HELPERS ========================
 
 def success_embed(title, desc, guild):
     embed = discord.Embed(title=title, description=desc, color=discord.Color.green())
@@ -3800,6 +3798,20 @@ def parse_error_code(status, text):
         500: "PRC API error"
     }
     return fallback.get(status, f"Unknown Error (Status {status})")
+
+
+# ======================== SESSION INITIALIZATION ========================
+
+
+
+@atexit.register
+def close_session():
+    global session
+    if session and not session.closed:
+        try:
+            asyncio.get_event_loop().run_until_complete(session.close())
+        except RuntimeError:
+            pass
 
 
 
