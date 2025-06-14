@@ -59,12 +59,11 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 # Set up the slash command tree
 tree = bot.tree
 
-
 @bot.event
 async def on_ready():
-    # Sync all commands
+    # Sync commands
     await bot.tree.sync()  # Global sync
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild-specific sync
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild sync
 
     bot.start_time = datetime.now(timezone.utc)
 
@@ -76,7 +75,7 @@ async def on_ready():
     update_vc_status.start()
     check_staff_livery.start()
 
-    # Set bot presence
+    # Set presence to DND with a watching status
     await bot.change_presence(
         status=discord.Status.dnd,
         activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
@@ -84,8 +83,6 @@ async def on_ready():
 
     print(f"{bot.user} has connected to Discord and is watching over the server.")
     print("-----------------------------------------------------------------------")
-
-
 
     
 
