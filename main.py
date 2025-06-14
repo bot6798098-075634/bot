@@ -2799,38 +2799,34 @@ async def send_embed(channel_id: int, embed: discord.Embed):
     await channel.send(embed=embed)
 
 # === HANDLE ERROR CODES ===
-def get_error_message(http_status: int, api_code: int | None = None) -> str:
-    if http_status == 400:
-        return "<error:1383587321294884975> **400 – Bad Request**: Check your data formatting."
-    if http_status == 403:
-        return "<error:1383587321294884975> **403 – Unauthorized**: Invalid or missing server key."
-    if http_status == 422:
-        return "<error:1383587321294884975> **422 – No Players**: Server has no players online."
-    if http_status == 500:
-        return "<error:1383587321294884975> **500 – Server Error**: PRC or Roblox issue. Try again."
+def get_error_message(http_status: int) -> str:
+    emoji = "<:error:1383587321294884975>"
 
-    if api_code is None:
-        return f"<error:1383587321294884975> **Unexpected Error** – HTTP Status {http_status}"
-
-    prc_errors = {
-        0: "<error:1383587321294884975> **0 – Unknown Error**: Contact PRC support if persistent.",
-        1001: "<error:1383587321294884975> **1001 – Roblox Communication Error**: In-game server problem.",
-        1002: "<error:1383587321294884975> **1002 – Internal System Error**: PRC system issue.",
-        2000: "<error:1383587321294884975> **2000 – Missing server-key**: Provide your key in headers.",
-        2001: "<error:1383587321294884975> **2001 – Malformed server-key**: Check format.",
-        2002: "<error:1383587321294884975> **2002 – Invalid/Expired server-key**.",
-        2003: "<error:1383587321294884975> **2003 – Invalid global API key**.",
-        2004: "<error:1383587321294884975> **2004 – Banned server-key**: Contact PRC.",
-        3001: "<error:1383587321294884975> **3001 – Invalid Command**: Check your :command syntax.",
-        3002: "<error:1383587321294884975> **3002 – Server Offline**: No players are online.",
-        4001: "<error:1383587321294884975> **4001 – Rate Limited**: Slow down.",
-        4002: "<error:1383587321294884975> **4002 – Restricted Command**: Not allowed via API.",
-        4003: "<error:1383587321294884975> **4003 – Prohibited Message**: Message is blocked.",
-        9998: "<error:1383587321294884975> **9998 – Resource Restricted**.",
-        9999: "<error:1383587321294884975> **9999 – Outdated Server Module**: Kick all players and restart.",
+    messages = {
+        100: f"{emoji} **100 – Continue**: The server has received the request headers, and the client should proceed.",
+        101: f"{emoji} **101 – Switching Protocols**: Protocol switching in progress.",
+        200: f"{emoji} **200 – OK**: The request was successful.",
+        201: f"{emoji} **201 – Created**: The request has been fulfilled and a new resource was created.",
+        204: f"{emoji} **204 – No Content**: The server successfully processed the request but returned no content.",
+        400: f"{emoji} **400 – Bad Request**: The server couldn't understand the request due to invalid syntax.",
+        401: f"{emoji} **401 – Unauthorized**: Authentication is required or has failed.",
+        403: f"{emoji} **403 – Forbidden**: You do not have permission to access this resource.",
+        404: f"{emoji} **404 – Not Found**: The requested resource could not be found.",
+        405: f"{emoji} **405 – Method Not Allowed**: The HTTP method is not allowed for this endpoint.",
+        408: f"{emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
+        409: f"{emoji} **409 – Conflict**: The request could not be processed because of a conflict.",
+        410: f"{emoji} **410 – Gone**: The resource requested is no longer available.",
+        415: f"{emoji} **415 – Unsupported Media Type**: The server does not support the media type.",
+        418: f"{emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
+        429: f"{emoji} **429 – Too Many Requests**: You are being rate limited.",
+        500: f"{emoji} **500 – Internal Server Error**: An unexpected condition was encountered.",
+        501: f"{emoji} **501 – Not Implemented**: The server does not recognize the request method.",
+        502: f"{emoji} **502 – Bad Gateway**: The server received an invalid response from the upstream server.",
+        503: f"{emoji} **503 – Service Unavailable**: The server is not ready to handle the request.",
+        504: f"{emoji} **504 – Gateway Timeout**: The server did not get a response in time.",
     }
 
-    return prc_errors.get(api_code, f"<error:1383587321294884975> **Unknown PRC Error** {api_code} (HTTP {http_status})")
+    return messages.get(http_status, f"{emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
 
 # === PRC COMMAND ===
 @bot.tree.command(name="erlc_command", description="Run a server command like :h, :m, :mod")
