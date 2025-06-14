@@ -2801,36 +2801,36 @@ async def send_embed(channel_id: int, embed: discord.Embed):
 # === HANDLE ERROR CODES ===
 def get_error_message(http_status: int, api_code: int | None = None) -> str:
     if http_status == 400:
-        return "❌ **400 – Bad Request**: Check your data formatting."
+        return "<error:1383587321294884975> **400 – Bad Request**: Check your data formatting."
     if http_status == 403:
-        return "❌ **403 – Unauthorized**: Invalid or missing server key."
+        return "<error:1383587321294884975> **403 – Unauthorized**: Invalid or missing server key."
     if http_status == 422:
-        return "⚠️ **422 – No Players**: Server has no players online."
+        return "<error:1383587321294884975> **422 – No Players**: Server has no players online."
     if http_status == 500:
-        return "💥 **500 – Server Error**: PRC or Roblox issue. Try again."
+        return "<error:1383587321294884975> **500 – Server Error**: PRC or Roblox issue. Try again."
 
     if api_code is None:
-        return f"❌ **Unexpected Error** – HTTP Status {http_status}"
+        return f"<error:1383587321294884975> **Unexpected Error** – HTTP Status {http_status}"
 
     prc_errors = {
-        0: "❌ **0 – Unknown Error**: Contact PRC support if persistent.",
-        1001: "🔁 **1001 – Roblox Communication Error**: In-game server problem.",
-        1002: "💥 **1002 – Internal System Error**: PRC system issue.",
-        2000: "🔑 **2000 – Missing server-key**: Provide your key in headers.",
-        2001: "🔑 **2001 – Malformed server-key**: Check format.",
-        2002: "🔑 **2002 – Invalid/Expired server-key**.",
-        2003: "🔐 **2003 – Invalid global API key**.",
-        2004: "🚫 **2004 – Banned server-key**: Contact PRC.",
-        3001: "⚙️ **3001 – Invalid Command**: Check your :command syntax.",
-        3002: "🛑 **3002 – Server Offline**: No players are online.",
-        4001: "🐌 **4001 – Rate Limited**: Slow down.",
-        4002: "🚷 **4002 – Restricted Command**: Not allowed via API.",
-        4003: "🧼 **4003 – Prohibited Message**: Message is blocked.",
-        9998: "🔒 **9998 – Resource Restricted**.",
-        9999: "📤 **9999 – Outdated Server Module**: Kick all players and restart.",
+        0: "<error:1383587321294884975> **0 – Unknown Error**: Contact PRC support if persistent.",
+        1001: "<error:1383587321294884975> **1001 – Roblox Communication Error**: In-game server problem.",
+        1002: "<error:1383587321294884975> **1002 – Internal System Error**: PRC system issue.",
+        2000: "<error:1383587321294884975> **2000 – Missing server-key**: Provide your key in headers.",
+        2001: "<error:1383587321294884975> **2001 – Malformed server-key**: Check format.",
+        2002: "<error:1383587321294884975> **2002 – Invalid/Expired server-key**.",
+        2003: "<error:1383587321294884975> **2003 – Invalid global API key**.",
+        2004: "<error:1383587321294884975> **2004 – Banned server-key**: Contact PRC.",
+        3001: "<error:1383587321294884975> **3001 – Invalid Command**: Check your :command syntax.",
+        3002: "<error:1383587321294884975> **3002 – Server Offline**: No players are online.",
+        4001: "<error:1383587321294884975> **4001 – Rate Limited**: Slow down.",
+        4002: "<error:1383587321294884975> **4002 – Restricted Command**: Not allowed via API.",
+        4003: "<error:1383587321294884975> **4003 – Prohibited Message**: Message is blocked.",
+        9998: "<error:1383587321294884975> **9998 – Resource Restricted**.",
+        9999: "<error:1383587321294884975> **9999 – Outdated Server Module**: Kick all players and restart.",
     }
 
-    return prc_errors.get(api_code, f"❓ **Unknown PRC Error** {api_code} (HTTP {http_status})")
+    return prc_errors.get(api_code, f"<error:1383587321294884975> **Unknown PRC Error** {api_code} (HTTP {http_status})")
 
 # === PRC COMMAND ===
 @bot.tree.command(name="erlc_command", description="Run a server command like :h, :m, :mod")
