@@ -1,20 +1,13 @@
 import os
 import json
 import logging
-import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-from threading import Thread
-from web import app  # Your Flask app
-from keep_alive import keep_alive  # Your Flask keepalive helper
+from web import keep_alive  # Single function now handles web + keep alive
 
-# ───────────── Flask Web Server ─────────────
-def run_web():
-    app.run(host="0.0.0.0", port=10000)
-
-Thread(target=run_web, daemon=True).start()  # daemon=True so thread closes with main process
+# ───────────── Start Web Keep-Alive ─────────────
 keep_alive()
 
 # ───────────── Bot Configuration ─────────────
@@ -72,9 +65,9 @@ for filename in os.listdir("./cogs"):
     if filename.endswith(".py") and not filename.startswith("__"):
         try:
             bot.load_extension(f"cogs.{filename[:-3]}")
-            logger.info(f"Loaded cog: {filename}")
+            logger.info(f"✅ Loaded cog: {filename}")
         except Exception as e:
-            logger.error(f"Failed to load cog {filename}: {e}")
+            logger.error(f"❌ Failed to load cog {filename}: {e}")
 
 # ───────────── Run the Bot ─────────────
 if TOKEN:
