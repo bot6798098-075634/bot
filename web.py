@@ -1,11 +1,11 @@
+from flask import Flask, render_template
 from threading import Thread
-from flask import Flask
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot is running!"
+    return render_template("index.html")  # Serve the HTML page
 
 def run_web():
     app.run(host="0.0.0.0", port=10000)
