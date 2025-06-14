@@ -2799,7 +2799,7 @@ async def send_embed(channel_id: int, embed: discord.Embed):
     await channel.send(embed=embed)
 
 # === HANDLE ERROR CODES ===
-def get_error_message(http_status: int) -> str:
+def get_error_message(http_status: int, api_code: str = None) -> str:
     emoji = "<:error:1383587321294884975>"
 
     messages = {
@@ -2826,7 +2826,11 @@ def get_error_message(http_status: int) -> str:
         504: f"{emoji} **504 – Gateway Timeout**: The server did not get a response in time.",
     }
 
-    return messages.get(http_status, f"{emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
+    base_message = messages.get(http_status, f"{emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
+    if api_code:
+        base_message += f"\nAPI code: {api_code}"
+    return base_message
+
 
 # === PRC COMMAND ===
 @bot.tree.command(name="erlc_command", description="Run a server command like :h, :m, :mod")
@@ -2843,17 +2847,13 @@ async def erlc_command(interaction: discord.Interaction, command: str):
 
     # If command starts with ":log ", treat it as a log message to send in game
     if lowered.startswith(":log "):
-        # Extract the message after ":log "
         message_to_log = command[5:].strip()
         if not message_to_log:
             await interaction.followup.send("❌ You must provide a message after ':log'.")
             return
 
-        # Construct the command to send to the API
-        # Assuming the game command to send a chat message is ':say <message>'
         in_game_command = f":say [LOG] {message_to_log}"
 
-        # Log embed for the log message command
         embed = discord.Embed(
             title="🛠 In-Game Log Message Sent",
             color=discord.Color.green(),
@@ -2864,7 +2864,6 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         embed.set_footer(text="PRC Command Log")
         await send_embed(COMMAND_LOG_CHANNEL_ID, embed)
 
-        # Send command to API
         payload = {"command": in_game_command}
         async with aiohttp.ClientSession() as session:
             try:
@@ -2884,9 +2883,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         await interaction.followup.send(f"✅ Log message sent in-game: {message_to_log}")
         return
 
-    # Regular command flow for all other commands
-
-    # Log embed
+    # Regular command flow for other commands
     embed = discord.Embed(
         title="🛠 Command Executed",
         color=discord.Color.blurple(),
@@ -2897,7 +2894,6 @@ async def erlc_command(interaction: discord.Interaction, command: str):
     embed.set_footer(text="PRC Command Log")
     await send_embed(COMMAND_LOG_CHANNEL_ID, embed)
 
-    # API call
     payload = {"command": command}
     async with aiohttp.ClientSession() as session:
         try:
