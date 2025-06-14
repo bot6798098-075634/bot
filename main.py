@@ -2764,7 +2764,19 @@ async def setreportticket(interaction: discord.Interaction):
 
 
 
+PRIV_ROLE_ID = 1316076187893891083
+PRC_API_URL = "https://api.policeroleplay.community/v1/server/command"
+ROBLOX_USER_API = "https://users.roblox.com/v1/users"
+STAFF_ROLE_ID = 1316076193459474525  # Your staff role ID
+LOGS_CHANNEL_ID = 1382851871118590073
+HEADERS = {"server-key": API_KEY}
+ENDPOINTS = ["modcalls", "killlogs", "joinlogs"]
+API_SERVER = "https://api.policeroleplay.community/v1/server"
 
+# Colors
+SUCCESS_COLOR = discord.Color.green()
+ERROR_COLOR = discord.Color.red()
+INFO_COLOR = discord.Color.blue()
 
 
 API_KEY = os.getenv("API_KEY")
@@ -3291,6 +3303,503 @@ async def roblox_user_info(interaction: discord.Interaction, user_id: str):
             embed.set_image(url=avatar_img_url)
 
         await interaction.followup.send(embed=embed)
+
+
+
+
+
+
+
+
+# Global session, created in on_ready
+session: aiohttp.ClientSession | None = None
+
+async def get_roblox_usernames(ids: list[int]) -> dict[int, str]:
+    usernames = {}
+    async with aiohttp.ClientSession() as session:
+        for user_id in ids:
+            async with session.get(f"{ROBLOX_USER_API}/{user_id}") as res:
+                if res.status == 200:
+                    data = await res.json()
+                    usernames[user_id] = data.get("name", f"ID:{user_id}")
+                else:
+                    usernames[user_id] = f"ID:{user_id}"
+    return usernames
+
+class InfoView(discord.ui.View):
+    def __init__(self, interaction: discord.Interaction, embed_callback):
+        super().__init__(timeout=180)
+        self.interaction = interaction
+        self.embed_callback = embed_callback
+
+        self.add_item(discord.ui.Button(
+            label="🔗 Join Server",
+            style=discord.ButtonStyle.link,
+            url="https://policeroleplay.community/join?code=SWATxRP&placeId=2534724415"
+        ))
+
+    @discord.ui.button(label="🔁 Refresh", style=discord.ButtonStyle.blurple)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.interaction.user.id:
+            await interaction.response.send_message("⚠️ You can't use this button.", ephemeral=True)
+            return
+
+        embed = await self.embed_callback()
+        await interaction.response.edit_message(embed=embed)
+
+async def create_server_info_embed(interaction: discord.Interaction) -> discord.Embed:
+    global session
+    if session is None:
+        raise Exception("HTTP session not initialized")
+
+    headers = {"server-key": API_KEY, "Accept": "*/*"}
+    async with session.get(f"{API_BASE}/server", headers=headers) as res:
+        if res.status != 200:
+            raise Exception("Failed to fetch server data.")
+        server = await res.json()
+
+    async with session.get(f"{API_BASE}/server/players", headers=headers) as res:
+        players = await res.json()
+
+    async with session.get(f"{API_BASE}/server/queue", headers=headers) as res:
+        queue = await res.json()
+
+    owner_id = server["OwnerId"]
+    co_owner_ids = server.get("CoOwnerIds", [])
+    usernames = await get_roblox_usernames([owner_id] + co_owner_ids)
+
+    mods = [p for p in players if p.get("Permission") == "Server Moderator"]
+    admins = [p for p in players if p.get("Permission") == "Server Administrator"]
+    staff = [p for p in players if p.get("Permission") != "Normal"]
+
+    embed = discord.Embed(
+        title=f"{server['Name']} - Server Info",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="🧾 Basic Info",
+        value=(
+            f"> **Join Code:** [{server['JoinKey']}](https://policeroleplay.community/join/{server['JoinKey']})\n"
+            f"> **Players:** {server['CurrentPlayers']}/{server['MaxPlayers']}\n"
+            f"> **Queue:** {len(queue)}"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="👮 Staff Info",
+        value=(
+            f"> **Moderators:** {len(mods)}\n"
+            f"> **Administrators:** {len(admins)}\n"
+            f"> **Staff in Server:** {len(staff)}"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="👑 Server Ownership",
+        value=(
+            f"> **Owner:** [{usernames[owner_id]}](https://roblox.com/users/{owner_id}/profile)\n"
+            f"> **Co-Owners:** {', '.join([f'[{usernames[uid]}](https://roblox.com/users/{uid}/profile)' for uid in co_owner_ids]) or 'None'}"
+        ),
+        inline=False
+    )
+
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    return embed
+
+@bot.tree.command(name="erlc_info2", description="Get ER:LC server info with live data.")
+async def info(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        embed = await create_server_info_embed(interaction)
+        view = InfoView(interaction, lambda: create_server_info_embed(interaction))
+        await interaction.followup.send(embed=embed, view=view)
+    except Exception as e:
+        print(f"[ERROR] /info command failed: {e}")
+        await interaction.followup.send("❌ Failed to fetch server information.")
+
+@bot.tree.command(name="erlc_players2", description="See all players in the server.")
+@app_commands.describe(filter="Filter players by username prefix (optional)")
+async def players(interaction: discord.Interaction, filter: str = None):
+    await interaction.response.defer()
+
+    global session
+    if session is None:
+        await interaction.followup.send("HTTP session not ready.")
+        return
+
+    headers = {"server-key": API_KEY}
+    async with session.get(f"{API_BASE}/server/players", headers=headers) as resp:
+        if resp.status != 200:
+            await interaction.followup.send(f"Failed to fetch players (status {resp.status})")
+            return
+        players_data = await resp.json()
+
+    async with session.get(f"{API_BASE}/server/queue", headers=headers) as resp:
+        if resp.status != 200:
+            await interaction.followup.send(f"Failed to fetch queue (status {resp.status})")
+            return
+        queue_data = await resp.json()
+
+    staff = []
+    actual_players = []
+
+    for p in players_data:
+        try:
+            username, id_str = p["Player"].split(":")
+            player_id = int(id_str)
+        except Exception:
+            continue
+        permission = p.get("Permission", "Normal")
+        team = p.get("Team", "")
+
+        if filter and not username.lower().startswith(filter.lower()):
+            continue
+
+        player_info = {
+            "username": username,
+            "id": player_id,
+            "team": team,
+        }
+
+        if permission == "Normal":
+            actual_players.append(player_info)
+        else:
+            staff.append(player_info)
+
+    def format_players(players_list):
+        if not players_list:
+            return "> No players in this category."
+        return ", ".join(
+            f"[{p['username']} ({p['team']})](https://roblox.com/users/{p['id']}/profile)" for p in players_list
+        )
+
+    embed = discord.Embed(
+        title="SWAT Roleplay Community - Players",
+        color=discord.Color.blue()
+    )
+
+    embed.description = (
+        f"**Server Staff ({len(staff)})**\n"
+        f"{format_players(staff)}\n\n"
+        f"**Online Players ({len(actual_players)})**\n"
+        f"{format_players(actual_players)}\n\n"
+        f"**Queue ({len(queue_data)})**\n"
+        f"{'> No players in queue.' if not queue_data else ', '.join(str(qid) for qid in queue_data)}"
+    )
+
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await interaction.followup.send(embed=embed)
+
+def is_staff():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        member = interaction.guild.get_member(interaction.user.id)
+        if member is None:
+            member = await interaction.guild.fetch_member(interaction.user.id)
+        if any(role.id == STAFF_ROLE_ID for role in member.roles):
+            return True
+        raise app_commands.CheckFailure("You do not have permission to use this command.")
+    return app_commands.check(predicate)
+
+async def get_server_players():
+    global session
+    if session is None:
+        return []
+    url = f"{API_BASE}/server/players"
+    headers = {"server-key": API_KEY}
+    async with session.get(url, headers=headers) as resp:
+        return await resp.json() if resp.status == 200 else []
+
+@bot.tree.command(name="erlc_teams", description="See all players grouped by team.")
+@is_staff()
+@app_commands.describe(filter="Filter players by username prefix (optional)")
+async def teams(interaction: discord.Interaction, filter: typing.Optional[str] = None):
+    await interaction.response.defer()
+    players = await get_server_players()
+    teams = {}
+
+    for plr in players:
+        if ":" not in plr.get("Player", ""):
+            continue
+        username, userid = plr["Player"].split(":", 1)
+
+        if filter and not username.lower().startswith(filter.lower()):
+            continue
+
+        team = plr.get("Team", "Unknown") or "Unknown"
+        teams.setdefault(team, []).append({"username": username, "id": userid})
+
+    team_order = ["Police", "Sheriff", "Fire", "DOT", "Civilian", "Jail"]
+    embed_desc = ""
+
+    for team in team_order:
+        count = len(teams.get(team, []))
+        embed_desc += f"**{team}** {count}\n\n"
+
+    embed = discord.Embed(title="Server Players by Team", description=embed_desc, color=discord.Color.blue())
+    embed.set_footer(text="SWAT Roleplay Community")
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+
+    await interaction.followup.send(embed=embed)
+
+
+
+
+async def prc_get(endpoint):
+    global session
+    if session is None:
+        raise Exception("HTTP session not initialized")
+    headers = {"server-key": API_KEY, "Accept": "*/*"}
+    url = f"{API_BASE}{endpoint}"
+    async with session.get(url, headers=headers) as resp:
+        if resp.status == 200:
+            return await resp.json()
+        else:
+            text = await resp.text()
+            raise Exception(f"PRC API error {resp.status}: {text}")
+
+@bot.tree.command(name="erlc_vehicles", description="Show vehicles currently in the server")
+async def vehicles(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        players = await prc_get("/server/players")
+        vehicles = await prc_get("/server/vehicles")
+    except Exception as e:
+        return await interaction.followup.send(f"Error fetching PRC data: {e}")
+
+    if not vehicles:
+        embed = discord.Embed(
+            title="Server Vehicles 0",
+            description="> There are no active vehicles in your server.",
+            color=discord.Color.blue()
+        )
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        return await interaction.followup.send(embed=embed)
+
+    players_dict = {p['Player'].split(":")[0]: p for p in players}
+    matched = []
+    for vehicle in vehicles:
+        owner = vehicle.get("Owner")
+        if owner in players_dict:
+            matched.append((vehicle, players_dict[owner]))
+
+    description_lines = []
+    for veh, plr in matched:
+        username = plr['Player'].split(":")[0]
+        roblox_id = plr['Player'].split(":")[1]
+        description_lines.append(f"[{username}](https://roblox.com/users/{roblox_id}/profile) - {veh['Name']} **({veh['Texture']})**")
+
+    description = "\n".join(description_lines)
+    embed = discord.Embed(
+        title=f"Server Vehicles [{len(vehicles)}/{len(players)}]",
+        description=description,
+        color=discord.Color.blue()
+    )
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="discord_check", description="Check if players in ER:LC are in Discord")
+async def check(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    def extract_roblox_name(name: str) -> str:
+        # If the name contains " | ", take the part after it; else the whole name
+        if " | " in name:
+            return name.split(" | ", 1)[1].lower()
+        else:
+            return name.lower()
+
+    try:
+        players = await prc_get("/server/players")
+    except Exception as e:
+        return await interaction.followup.send(f"Error fetching PRC data: {e}")
+
+    if not players:
+        embed = discord.Embed(
+            title="players in ER:LC are not Discord",
+            description="> No players found in the server.",
+            color=discord.Color.blue()
+        )
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        return await interaction.followup.send(embed=embed)
+
+    # Build a set of roblox usernames extracted from Discord members
+    roblox_names_in_discord = set()
+    for member in interaction.guild.members:
+        for name_source in (member.name, member.display_name):
+            roblox_name = extract_roblox_name(name_source)
+            roblox_names_in_discord.add(roblox_name)
+
+    missing_players = []
+    for player in players:
+        roblox_username = player['Player'].split(":", 1)[0].lower()
+        roblox_id = player['Player'].split(":", 1)[1]
+
+        if roblox_username not in roblox_names_in_discord:
+            missing_players.append((roblox_username, roblox_id))
+
+    if not missing_players:
+        description = "> All players are in the Discord server."
+    else:
+        description = "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
+
+    embed = discord.Embed(
+        title="Players in ER:LC Not in Discord",
+        description=description,
+        color=discord.Color.blue()
+    )
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await interaction.followup.send(embed=embed)
+
+# Close aiohttp session on exit
+@atexit.register
+def close_session():
+    if session and not session.closed:
+        bot.loop.run_until_complete(session.close())
+
+@bot.tree.command(name="erlc_command2", description="Run a PRC command on your ER:LC server")
+@app_commands.describe(command="The command to send (e.g. :h Hello!)")
+async def command(interaction: discord.Interaction, command: str):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    # Permissions
+    has_staff = any(role.id == STAFF_ROLE_ID for role in interaction.user.roles)
+    has_priv = any(role.id == PRIV_ROLE_ID for role in interaction.user.roles)
+
+    restricted = [":ban", ":kick", ":mod", ":unmod", ":admin", ":unadmin"]
+    if any(word in command.lower() for word in restricted) and not has_priv:
+        return await interaction.followup.send(embed=error_embed(
+            "Permission Denied",
+            "You do not have permission to run privileged commands.",
+            interaction.guild
+        ))
+
+    if not has_staff:
+        return await interaction.followup.send(embed=error_embed(
+            "Unauthorized",
+            "You must have the Staff role to run this command.",
+            interaction.guild
+        ))
+
+    if not command.startswith(":"):
+        command = ":" + command
+
+    # Send to PRC API
+    try:
+        url = "https://api.policeroleplay.community/v1/server/command"
+        headers = {
+            "server-key": API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {"erlc_command2": command}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                status = resp.status
+                response_text = await resp.text()
+
+        if status == 200:
+            result = "✅ Successfully Ran"
+            await interaction.followup.send(embed=success_embed(
+                "Command Executed",
+                "Your command was successfully sent to the server.",
+                interaction.guild
+            ))
+        else:
+            result = parse_error_code(status, response_text)
+            await interaction.followup.send(embed=error_embed(
+                "Command Failed",
+                f"The command failed to execute.\n**Reason:** {result}",
+                interaction.guild
+            ))
+
+        # Log to channel
+        log_channel = interaction.guild.get_channel(LOGS_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(title="📄 Command Log", color=discord.Color.blue())
+            embed.add_field(name="👤 User", value=interaction.user.mention, inline=False)
+            embed.add_field(name="💬 Command", value=discord.utils.escape_markdown(command), inline=False)
+            embed.add_field(name="📊 Result", value=result, inline=False)
+            if interaction.guild and interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+            embed.set_footer(text="SWAT Roleplay Community")
+            await log_channel.send(embed=embed)
+
+    except aiohttp.ClientError as e:
+        await interaction.followup.send(embed=error_embed(
+            "API Connection Error",
+            f"Could not reach PRC API: `{str(e)}`",
+            interaction.guild
+        ))
+    except Exception as e:
+        await interaction.followup.send(embed=error_embed(
+            "Discord Error",
+            f"An unexpected error occurred: `{str(e)}`",
+            interaction.guild
+        ))
+
+# ===== Embed Helpers =====
+
+def success_embed(title, desc, guild):
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.green())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
+
+def error_embed(title, desc, guild):
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.red())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
+
+def parse_error_code(status, text):
+    prc_errors = {
+        0: "Unknown error occurred",
+        1001: "Issue communicating with Roblox",
+        1002: "Internal system error",
+        2000: "Missing server-key",
+        2001: "Malformed server-key",
+        2002: "Invalid or expired server-key",
+        2003: "Invalid global API key",
+        2004: "Server-key is banned",
+        3001: "No valid command provided",
+        3002: "Server has no players",
+        4001: "Rate limited",
+        4002: "Restricted command",
+        4003: "Prohibited message",
+        9998: "Restricted resource",
+        9999: "Server module outdated"
+    }
+    for code, reason in prc_errors.items():
+        if str(code) in text:
+            return f"{reason} (Code: {code})"
+    fallback = {
+        400: "Bad request",
+        403: "Unauthorized",
+        422: "Server has no players",
+        500: "PRC API error"
+    }
+    return fallback.get(status, f"Unknown Error (Status {status})")
+
+
 
 
 
