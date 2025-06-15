@@ -2799,63 +2799,46 @@ async def send_embed(channel_id: int, embed: discord.Embed):
     await channel.send(embed=embed)
 
 # === HANDLE ERROR CODES ===
-def get_error_embed(http_status: int, api_code: str = None) -> discord.Embed:
-    emoji = "<:error:1383587321294884975>"
+ERROR_EMOJI = "<:error:1383587321294884975>"
 
+# This returns an Embed with your error message and emoji
+def get_error_embed(http_status: int, api_code: int = None) -> Embed:
+    # Dictionary of error messages
     messages = {
-        0:    f"Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
-        100:  "The server has received the request headers, and the client should proceed.",
-        101:  "Protocol switching in progress.",
-        200:  "The request was successful.",
-        201:  "The request has been fulfilled and a new resource was created.",
-        204:  "The server successfully processed the request but returned no content.",
-        400:  "Bad request.",
-        401:  "Authentication is required or has failed.",
-        403:  "Unauthorized access.",
-        404:  "The requested resource could not be found.",
-        405:  "The HTTP method is not allowed for this endpoint.",
-        408:  "The server timed out waiting for the request.",
-        409:  "The request could not be processed because of a conflict.",
-        410:  "The resource requested is no longer available.",
-        415:  "The server does not support the media type.",
-        418:  "The server refuses to brew coffee in a teapot.",
-        422:  "The private server has no players in it.",
-        429:  "You are being rate limited.",
-        500:  "Problem communicating with Roblox.",
-        501:  "The server does not recognize the request method.",
-        502:  "The server received an invalid response from the upstream server.",
-        503:  "The server is not ready to handle the request.",
-        504:  "The server did not get a response in time.",
-        1001: "An error occurred communicating with Roblox / the in-game private server.",
-        1002: "An internal system error occurred.",
-        2000: "You did not provide a server-key.",
-        2001: "You provided an incorrectly formatted server-key.",
-        2002: "You provided an invalid (or expired) server-key.",
-        2003: "You provided an invalid global API key.",
-        2004: "Your server-key is currently banned from accessing the API.",
-        3001: "You did not provide a valid command in the request body.",
-        3002: "The server you are attempting to reach is currently offline (has no players).",
-        4001: "You are being rate limited.",
-        4002: "The command you are attempting to run is restricted.",
-        4003: "The message you're trying to send is prohibited.",
-        9998: "The resource you are accessing is restricted.",
+        400: "Bad request",
+        403: "Unauthorized",
+        422: "The private server has no players in it",
+        500: "Problem communicating with Roblox",
+        0: "Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
+        1001: "An error occurred communicating with Roblox / the in-game private server",
+        1002: "An internal system error occurred",
+        2000: "You did not provide a server-key",
+        2001: "You provided an incorrectly formatted server-key",
+        2002: "You provided an invalid (or expired) server-key",
+        2003: "You provided an invalid global API key",
+        2004: "Your server-key is currently banned from accessing the API",
+        3001: "You did not provide a valid command in the request body",
+        3002: "The server you are attempting to reach is currently offline (has no players)",
+        4001: "You are being rate limited",
+        4002: "The command you are attempting to run is restricted",
+        4003: "The message you're trying to send is prohibited",
+        9998: "The resource you are accessing is restricted",
         9999: "The module running on the in-game server is out of date, please kick all and try again.",
     }
 
-    description = messages.get(http_status, "An unexpected error occurred.")
-    title = f"{emoji} {http_status} – Error"
+    # Get error message from either API code or http status
+    if api_code is not None and api_code in messages:
+        error_message = messages[api_code]
+        error_code = api_code
+    else:
+        error_message = messages.get(http_status, "An unexpected error occurred.")
+        error_code = http_status
 
-    if http_status in messages:
-        # Provide more descriptive title for known codes
-        title += f": {messages[http_status].split('.')[0]}"
-    
-    if api_code:
-        description += f"\n\nAPI Code: `{api_code}`"
-
-    embed = discord.Embed(
-        title=title,
-        description=description,
-        color=discord.Color.red()
+    embed = Embed(
+        title=f"{ERROR_EMOJI} Error {error_code}",
+        description=error_message,
+        color=discord.Color.red(),
+        timestamp=datetime.now(timezone.utc)
     )
     embed.set_footer(text="PRC API Error")
 
