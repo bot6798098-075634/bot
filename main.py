@@ -31,6 +31,7 @@ from datetime import timezone
 from keep_alive import keep_alive
 import typing
 import atexit
+import copy
 
 keep_alive()  # Starts the web server
 
@@ -91,6 +92,10 @@ async def on_ready():
     update_vc_status.start()
     check_staff_livery.start()
 
+    # Add the command group to the command tree
+    bot.tree.add_command(erlc_group)
+    bot.tree.add_command(discord_group)
+
     # Set presence to DND with a watching status
     await bot.change_presence(
         status=discord.Status.dnd,
@@ -100,7 +105,13 @@ async def on_ready():
     print(f"{bot.user} has connected to Discord and is watching over the server.")
     print("-----------------------------------------------------------------------")
 
-    
+# ---------------------------------------------------------------------------------------------------------
+
+# groups
+erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC server info with live data.")
+discord_group = app_commands.Group(name="discord", description="Discord-related commands")
+
+# ---------------------------------------------------------------------------------------------------------
 
     
 
@@ -2803,11 +2814,55 @@ async def setreportticket(interaction: discord.Interaction):
 
 
 
-
-
+# --- CONFIGURATION ---
 
 API_KEY = os.getenv("API_KEY")
 API_BASE = "https://api.policeroleplay.community/v1/server"
+PRIV_ROLE_ID = 1316076187893891083
+ROBLOX_USER_API = "https://users.roblox.com/v1/users"
+LOGS_CHANNEL_ID = 1382851871118590073
+ENDPOINTS = ["modcalls", "killlogs", "joinlogs"]
+WELCOME_TEMPLATE = "Welcome to the server!"
+KICK_REASON = "Username not allowed (starts with All or Others)"
+PLAYERCOUNT_VC_ID = 1381697147895939233  # VC that will show player count
+QUEUE_VC_ID = 1381697165562347671        # VC that will show queue size
+PLAYERCOUNT_PREFIX = "「🎮」In Game:"
+QUEUE_PREFIX = "「⏳」In Queue:"
+DISCORD_CHANNEL_ID = 1381267054354632745  # your target channel ID
+STAFF_ROLE_ID = 1375985192174354442  # the Discord role ID to exempt users
+
+# Example config: vehicle name mapped to allowed Discord role IDs
+RESTRICTED_VEHICLES = {
+    "Bugatti Veyron": [123456789012345678],  # VIP role
+    "Tesla Roadster": [234567890123456789],  # Booster role
+}
+
+# Roblox-Discord links
+ROBLOX_DISCORD_LINKS = {
+    "PlayerName123": 345678901234567890,  # Discord user ID
+    "VIPUser987": 123456789012345678,     # This one has VIP
+}
+
+# Voice channel abbreviation map
+VC_ABBREVIATIONS = {
+    "MS1": 112233445566778800,
+    "MS2": 112233445566778801,
+    "STAFF": 112233445566778802,
+    "G1": 112233445566778803,
+    "G2": 112233445566778804,
+    "M": 112233445566778805
+}
+
+# Roblox username to Discord user ID
+ROBLOX_TO_DISCORD = {
+    "ModUser1": 998877665544332211,
+    "ModUser2": 887766554433221100
+}
+
+welcomed_players = set()
+handled_usernames = set()
+last_checked_time = 0
+
 HEADERS_GET = {
     "server-key": API_KEY,
     "Accept": "*/*"
@@ -3460,30 +3515,14 @@ async def on_interaction(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"❌ An error occurred: {e}", ephemeral=True)
 
+# Colors
+SUCCESS_COLOR = discord.Color.green()
+ERROR_COLOR = discord.Color.red()
+INFO_COLOR = discord.Color.blue()
+BLANK_COLOR = discord.Color.blurple()
 
-
-
-
-    
-
-
-
-API_BASE2 = "https://api.policeroleplay.community/v1"
-PRIV_ROLE_ID = 1346578198749511700
-PRC_API_URL = "https://api.policeroleplay.community/v1/server/command"
-ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-API_KEY = os.getenv("API_KEY")  # Make sure this is set in your environment
-STAFF_ROLE_ID = 1343234687505530902  # Your staff role ID
-LOGS_CHANNEL_ID = 1381267054354632745
-HEADERS = {"server-key": API_KEY}
-ENDPOINTS = ["modcalls", "killlogs", "joinlogs"]
-API_SERVER = "https://api.policeroleplay.community/v1/server"
-
-
-
-
-
-
+# Global session, created in on_ready
+session: aiohttp.ClientSession | None = None
 
 async def get_roblox_usernames(ids: list[int]) -> dict[int, str]:
     usernames = {}
@@ -3580,8 +3619,9 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
 
     return embed
 
-@bot.tree.command(name="erlc_info2", description="Get ER:LC server info with live data.")
-async def info(interaction: discord.Interaction):
+# Add a subcommand to /erlc -> /erlc info
+@erlc_group.command(name="info", description="Get ER:LC server info with live data.")
+async def erlc_info(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
         embed = await create_server_info_embed(interaction)
@@ -3591,7 +3631,9 @@ async def info(interaction: discord.Interaction):
         print(f"[ERROR] /info command failed: {e}")
         await interaction.followup.send("❌ Failed to fetch server information.")
 
-@bot.tree.command(name="erlc_players2", description="See all players in the server.")
+
+
+@erlc_group.command(name="players", description="See all players in the server.")
 @app_commands.describe(filter="Filter players by username prefix (optional)")
 async def players(interaction: discord.Interaction, filter: str = None):
     await interaction.response.defer()
@@ -3686,7 +3728,7 @@ async def get_server_players():
     async with session.get(url, headers=headers) as resp:
         return await resp.json() if resp.status == 200 else []
 
-@bot.tree.command(name="erlc_teams2", description="See all players grouped by team.")
+@erlc_group.command(name="teams", description="See all players grouped by team.")
 @is_staff()
 @app_commands.describe(filter="Filter players by username prefix (optional)")
 async def teams(interaction: discord.Interaction, filter: typing.Optional[str] = None):
@@ -3719,15 +3761,12 @@ async def teams(interaction: discord.Interaction, filter: typing.Optional[str] =
 
     await interaction.followup.send(embed=embed)
 
-session = None  # aiohttp.ClientSession, should be initialized elsewhere
-
 async def prc_get(endpoint):
     global session
     if session is None:
         raise Exception("HTTP session not initialized")
     headers = {"server-key": API_KEY, "Accept": "*/*"}
-    url = f"{API_BASE2}{endpoint}"  # Changed here
-    print(f"Fetching PRC endpoint: {url}")  # Helpful for debugging
+    url = f"{API_BASE}{endpoint}"
     async with session.get(url, headers=headers) as resp:
         if resp.status == 200:
             return await resp.json()
@@ -3735,8 +3774,7 @@ async def prc_get(endpoint):
             text = await resp.text()
             raise Exception(f"PRC API error {resp.status}: {text}")
 
-
-@bot.tree.command(name="erlc_vehicles2", description="Show vehicles currently in the server")
+@erlc_group.command(name="vehicles", description="Show vehicles currently in the server")
 async def vehicles(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
@@ -3765,12 +3803,14 @@ async def vehicles(interaction: discord.Interaction):
 
     description_lines = []
     for veh, plr in matched:
-        username, roblox_id = plr['Player'].split(":")
+        username = plr['Player'].split(":")[0]
+        roblox_id = plr['Player'].split(":")[1]
         description_lines.append(f"[{username}](https://roblox.com/users/{roblox_id}/profile) - {veh['Name']} **({veh['Texture']})**")
 
+    description = "\n".join(description_lines)
     embed = discord.Embed(
         title=f"Server Vehicles [{len(vehicles)}/{len(players)}]",
-        description="\n".join(description_lines),
+        description=description,
         color=discord.Color.blue()
     )
     if interaction.guild and interaction.guild.icon:
@@ -3779,8 +3819,7 @@ async def vehicles(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-
-@bot.tree.command(name="discord_check", description="Check if players in ER:LC are in Discord")
+@discord_group.command(name="check", description="Check if players in ER:LC are in Discord")
 async def check(interaction: discord.Interaction):
     await interaction.response.defer()
 
@@ -3794,7 +3833,7 @@ async def check(interaction: discord.Interaction):
 
     if not players:
         embed = discord.Embed(
-            title="Players in ER:LC not in Discord",
+            title="players in ER:LC are not Discord",
             description="> No players found in the server.",
             color=discord.Color.blue()
         )
@@ -3803,11 +3842,10 @@ async def check(interaction: discord.Interaction):
         embed.set_footer(text="SWAT Roleplay Community")
         return await interaction.followup.send(embed=embed)
 
-    roblox_names_in_discord = {
-        extract_roblox_name(name)
-        for member in interaction.guild.members
-        for name in (member.name, member.display_name)
-    }
+    roblox_names_in_discord = set()
+    for member in interaction.guild.members:
+        for name_source in (member.name, member.display_name):
+            roblox_names_in_discord.add(extract_roblox_name(name_source))
 
     missing_players = []
     for player in players:
@@ -3817,8 +3855,8 @@ async def check(interaction: discord.Interaction):
 
     description = (
         "> All players are in the Discord server."
-        if not missing_players
-        else "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
+        if not missing_players else
+        "\n".join(f"> [{u}](https://roblox.com/users/{i}/profile)" for u, i in missing_players)
     )
 
     embed = discord.Embed(
@@ -3838,9 +3876,10 @@ def close_session():
     if session and not session.closed:
         bot.loop.run_until_complete(session.close())
 
-@bot.tree.command(name="erlc_command2", description="Run a PRC command on your ER:LC server")
+# The /erlc command subcommand: /erlc command
+@erlc_group.command(name="command", description="Run a PRC command on your ER:LC server")
 @app_commands.describe(command="The command to send (e.g. :h Hello!)")
-async def command(interaction: discord.Interaction, command: str):
+async def erlc_command(interaction: discord.Interaction, command: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     # Permissions
@@ -3867,7 +3906,7 @@ async def command(interaction: discord.Interaction, command: str):
 
     # Send to PRC API
     try:
-        url = "https://api.policeroleplay.community/v1/server/command"
+        url = f"{API_BASE}/command"
         headers = {
             "server-key": API_KEY,
             "Content-Type": "application/json"
@@ -3935,230 +3974,430 @@ def error_embed(title, desc, guild):
     embed.set_footer(text="SWAT Roleplay Community")
     return embed
 
+def is_staff():
+    def predicate(interaction: discord.Interaction) -> bool:
+        return interaction.user.guild_permissions.manage_guild
+    return app_commands.check(predicate)
+
+@erlc_group.command(name="bans", description="Filter the bans of your server.")
+@is_staff()
+@app_commands.describe(username="Filter by Roblox username", user_id="Filter by Roblox user ID")
+async def bans(
+    interaction: discord.Interaction,
+    username: typing.Optional[str] = None,
+    user_id: typing.Optional[int] = None,
+):
+    await interaction.response.defer()
+
+    url = "https://api.policeroleplay.community/v1/server/bans"
+    headers = {
+        "server-key": API_KEY,
+        "Accept": "application/json",
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return await interaction.followup.send(
+                    embed=discord.Embed(
+                        title="PRC API Error",
+                        description=f"Failed to fetch bans. Status code: {resp.status}",
+                        color=discord.Color.blurple(),  # or your BLANK_COLOR
+                    )
+                )
+            bans_data = await resp.json()  # dict: {PlayerId: PlayerName}
+
+    embed = discord.Embed(color=discord.Color.blurple(), title="Bans", description="")
+    status = username or user_id
+
+    username_filter = username.lower() if username else None
+    user_id_filter = str(user_id) if user_id else None
+
+    old_embed = copy.copy(embed)
+    embeds = [embed]
+
+    for player_id, player_name in bans_data.items():
+        if (username_filter and username_filter in player_name.lower()) or (user_id_filter and user_id_filter == player_id) or not status:
+            embed = embeds[-1]
+            if len(embed.description) > 3800:
+                new_embed = copy.copy(old_embed)
+                embeds.append(new_embed)
+                embed = new_embed
+            embed.description += f"> [{player_name} ({player_id})](https://roblox.com/users/{player_id}/profile)\n"
+
+    if embeds[0].description.strip() == "":
+        embeds[0].description = (
+            "> This ban was not found."
+            if status
+            else "> No bans found on your server."
+        )
+
+    guild_icon = interaction.guild.icon.url if interaction.guild and interaction.guild.icon else None
+    for embed in embeds:
+        embed.set_author(name=interaction.guild.name, icon_url=guild_icon)
+        if guild_icon:
+            embed.set_thumbnail(url=guild_icon)
+        embed.set_footer(text="SWAT Roleplay Community")
+
+    for embed in embeds:
+        await interaction.followup.send(embed=embed)
+
+def roblox_link(player_str: str):
+    """Returns [Name](link) or just name"""
+    try:
+        name, user_id = player_str.split(":")
+        return f"[{name}](https://www.roblox.com/users/{user_id}/profile)"
+    except:
+        return player_str
+
+async def fetch_modcalls():
+    url = f"{API_BASE}/modcalls"
+    headers = {
+        "server-key": API_KEY,
+        "Accept": "application/json"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                raise Exception(f"Failed to fetch modcalls: HTTP {resp.status}")
+
+async def fetch_killlogs():
+    url = f"{API_BASE}/killlogs"
+    headers = {
+        "server-key": API_KEY,
+        "Accept": "application/json"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                raise Exception(f"Failed to fetch kill logs: HTTP {resp.status}")
+
+@erlc_group.command(name="killlogs", description="Show recent kill logs")
+async def killlogs(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    try:
+        killlogs = await fetch_killlogs()
+
+        embed = discord.Embed(
+            title="SWAT Roleplay Community - Kill Logs",
+            color=discord.Color.blue()
+        )
+
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+
+        embed.set_footer(text="SWAT Roleplay Community")
+
+        if not killlogs:
+            embed.add_field(
+                name="No Kill Logs Found",
+                value="> No kills in this category.",
+                inline=False
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        for entry in killlogs[:10]:
+            killer = roblox_link(entry.get("Killer", "Unknown"))
+            victim = roblox_link(entry.get("Victim", "Unknown"))
+            weapon = entry.get("Weapon", "Unknown")
+            timestamp = entry.get("Timestamp", 0)
+            time_str = f"<t:{int(timestamp)}:R>"
+
+            value_text = (
+                f"> **Killer:** {killer}\n"
+                f"> **Victim:** {victim}\n"
+                f"> **Weapon:** `{weapon}`\n"
+                f"> **Time:** {time_str}"
+            )
+
+            embed.add_field(
+                name="\u200b",
+                value=value_text,
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error",
+            description=f"Failed to fetch kill logs.\n{e}",
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed)
 
 
+@erlc_group.command(name="modcalls", description="Show recent moderator call logs")
+async def modcalls(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    try:
+        modcalls = await fetch_modcalls()
+
+        embed = discord.Embed(
+            title="SWAT Roleplay Community - Modcalls",
+            color=discord.Color.blue()
+        )
+
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+
+        embed.set_footer(text="SWAT Roleplay Community")
+
+        if not modcalls:
+            embed.add_field(
+                name="No Modcalls Found",
+                value="> No modcalls in this category.",
+                inline=False
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        for entry in modcalls[:10]:
+            caller = roblox_link(entry.get("Caller", "Unknown"))
+            moderator_raw = entry.get("Moderator", "No responder")
+            moderator = roblox_link(moderator_raw) if ":" in moderator_raw else moderator_raw
+            timestamp = entry.get("Timestamp", 0)
+            time_str = f"<t:{int(timestamp)}:R>"
+
+            value_text = (
+                f"> **Caller:** {caller}\n"
+                f"> **Moderator:** {moderator}\n"
+                f"> **Time:** {time_str}"
+            )
+
+            embed.add_field(
+                name="\u200b",
+                value=value_text,
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error",
+            description=f"Failed to fetch modcalls.\n{e}",
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed)
+
+HEADERS_POST = {
+    "server-key": API_KEY,
+    "Content-Type": "application/json"
+}
+
+CHANNEL_ID = 1382852068816978092
+last_shutdown_call = 0  # global cooldown tracker
 
 
+async def send_ssd_and_kick(channel: discord.TextChannel):
+    global last_shutdown_call
+    if time.time() - last_shutdown_call < 5:
+        return  # Ignore if called again within 5 seconds
+    last_shutdown_call = time.time()
 
+    shutdown_message = {
+        "command": ":m ❗ SWAT Roleplay Community has unfortunately chosen to SSD. You must leave the game at this time and only rejoin during an SSU. Failure to leave within 3 minutes will result in being kicked. If you have any questions, call !mod. Thank you! ❗"
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Join voice channel command
-@bot.tree.command(name="join_voice_channel", description="Make the bot join your voice channel")
-async def join_voice_channel(interaction: discord.Interaction):
-    voice_state = interaction.user.voice
-    if not voice_state or not voice_state.channel:
-        await interaction.response.send_message("❌ You are not connected to any voice channel.", ephemeral=True)
+    try:
+        response = requests.post(f"{API_BASE}/command", headers=HEADERS_POST, json=shutdown_message)
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="SSD Message Sent ✅",
+                description="The shutdown message was successfully sent. Waiting 4 minutes before kicking all players...",
+                color=discord.Color.green()
+            )
+            await channel.send(embed=embed)
+        elif response.status_code == 422:
+            embed = discord.Embed(
+                title="No Players in Server ⚠️",
+                description="There are no players currently in the server to receive the SSD message.",
+                color=discord.Color.gold()
+            )
+            await channel.send(embed=embed)
+            return
+        else:
+            embed = discord.Embed(
+                title="Failed to Send SSD Message ❌",
+                description=f"API responded with status code `{response.status_code}`.",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
+            return
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error Sending SSD Message ❌",
+            description=f"An exception occurred: `{e}`",
+            color=discord.Color.red()
+        )
+        await channel.send(embed=embed)
         return
 
-    channel = voice_state.channel
-    voice_client = interaction.guild.voice_client
+    await asyncio.sleep(240)  # Wait 4 minutes
 
-    if voice_client:
-        if voice_client.channel.id == channel.id:
-            await interaction.response.send_message(f"✅ I'm already connected to **{channel.name}**.", ephemeral=True)
+    kick_all_command = {"command": ":kick all"}
+    try:
+        response = requests.post(f"{API_BASE}/command", headers=HEADERS_POST, json=kick_all_command)
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="Kick All Sent ✅",
+                description="All players have been kicked from the server.",
+                color=discord.Color.green()
+            )
+            await channel.send(embed=embed)
+        elif response.status_code == 422:
+            embed = discord.Embed(
+                title="No Players to Kick ⚠️",
+                description="Kick all failed — no players were left in the server.",
+                color=discord.Color.gold()
+            )
+            await channel.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="Failed to Kick ❌",
+                description=f"API responded with status code `{response.status_code}` when kicking.",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error Sending Kick Command ❌",
+            description=f"An exception occurred: `{e}`",
+            color=discord.Color.red()
+        )
+        await channel.send(embed=embed)
+
+
+@bot.tree.command(name="ssd", description="Send a server shutdown message to the ER:LC server")
+async def ssd(interaction: discord.Interaction):
+    await interaction.response.defer()
+    await send_ssd_and_kick(interaction.channel)
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    global last_shutdown_call
+
+    if message.channel.id != CHANNEL_ID:
+        return
+
+    if message.webhook_id and message.embeds:
+        embed = message.embeds[0]
+        if embed.description and ":log ssd" in embed.description.lower():
+            # Skip if SSD triggered recently (already handled by slash command)
+            if time.time() - last_shutdown_call < 5:
+                return
+            await send_ssd_and_kick(message.channel)
+
+    await bot.process_commands(message)
+
+# --------------------------------
+
+REQUIRED_ROLE_ID = 1316076193459474525  # Staff role required to run the command
+
+async def send_the_emergency_shutdown_message(channel: discord.TextChannel):
+    shutdown_message = {
+        "command": ":m ❗ The SWAT Roleplay Community owner has done an emergency server shutdown. You must leave the game. Failure to leave within 1.5 minutes will result in being kicked. Thank you! ❗"
+    }
+
+    try:
+        response = requests.post(f"{API_BASE}/command", headers=HEADERS_POST, json=shutdown_message)
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="SSD Message Sent ✅",
+                description="The emergency shutdown message was successfully sent. Waiting 1.5 minutes before kicking all players...",
+                color=discord.Color.green()
+            )
+            await channel.send(embed=embed)
+        elif response.status_code == 422:
+            embed = discord.Embed(
+                title="No Players in Server ⚠️",
+                description="There are no players currently in the server to receive the emergency shutdown message.",
+                color=discord.Color.gold()
+            )
+            await channel.send(embed=embed)
             return
-        try:
-            await voice_client.move_to(channel)
-            await interaction.response.send_message(f"✅ Moved to **{channel.name}**.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to move: {e}", ephemeral=True)
-    else:
-        try:
-            await channel.connect()
-            await interaction.response.send_message(f"✅ Joined **{channel.name}**.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
-
-# Leave voice channel command
-@bot.tree.command(name="leave_voice_channel", description="Make the bot leave its current voice channel")
-async def leave_voice_channel(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_connected():
-        try:
-            await voice_client.disconnect()
-            await interaction.response.send_message("👋 Left the voice channel.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
-
-# Additional commands
-
-@bot.tree.command(name="pause_voice", description="Pause the currently playing audio")
-async def pause_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_playing():
-        voice_client.pause()
-        await interaction.response.send_message("⏸️ Paused the audio.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ No audio is currently playing.", ephemeral=True)
-
-@bot.tree.command(name="resume_voice", description="Resume paused audio")
-async def resume_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_paused():
-        voice_client.resume()
-        await interaction.response.send_message("▶️ Resumed the audio.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ No audio is currently paused.", ephemeral=True)
-
-@bot.tree.command(name="stop_voice", description="Stop the audio and disconnect from voice channel")
-async def stop_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client:
-        if voice_client.is_playing() or voice_client.is_paused():
-            voice_client.stop()
-        try:
-            await voice_client.disconnect()
-            await interaction.response.send_message("🛑 Stopped and left the voice channel.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# --- CONFIGURATION ---
-WELCOME_TEMPLATE = "Welcome to the server!"
-KICK_REASON = "Username not allowed (starts with All or Others)"
-PLAYERCOUNT_VC_ID = 1381697147895939233  # VC that will show player count
-QUEUE_VC_ID = 1381697165562347671        # VC that will show queue size
-PLAYERCOUNT_PREFIX = "「🎮」In Game:"
-QUEUE_PREFIX = "「⏳」In Queue:"
-DISCORD_CHANNEL_ID = 1381267054354632745  # your target channel ID
-STAFF_ROLE_ID = 1375985192174354442  # the Discord role ID to exempt users
-PRC_VEHICLES_URL = "https://api.policeroleplay.community/v1/server/vehicles"
-
-# Example config: vehicle name mapped to allowed Discord role IDs
-RESTRICTED_VEHICLES = {
-    "Bugatti Veyron": [123456789012345678],  # VIP role
-    "Tesla Roadster": [234567890123456789],  # Booster role
-}
-
-# Roblox-Discord links
-ROBLOX_DISCORD_LINKS = {
-    "PlayerName123": 345678901234567890,  # Discord user ID
-    "VIPUser987": 123456789012345678,     # This one has VIP
-}
-
-# Voice channel abbreviation map
-VC_ABBREVIATIONS = {
-    "MS1": 112233445566778800,
-    "MS2": 112233445566778801,
-    "STAFF": 112233445566778802,
-    "G1": 112233445566778803,
-    "G2": 112233445566778804,
-    "M": 112233445566778805
-}
-
-# Roblox username to Discord user ID
-ROBLOX_TO_DISCORD = {
-    "ModUser1": 998877665544332211,
-    "ModUser2": 887766554433221100
-}
-
-welcomed_players = set()
-handled_usernames = set()
-last_checked_time = 0
+        else:
+            embed = discord.Embed(
+                title="Failed to Send the emergency shutdown message ❌",
+                description=f"API responded with status code `{response.status_code}`.",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
+            return
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error Sending the emergency shutdown message ❌",
+            description=f"An exception occurred: `{e}`",
+            color=discord.Color.red()
+        )
+        await channel.send(embed=embed)
+        return
+
+    await asyncio.sleep(90)  # wait 1.5 minutes before kicking
+
+    kick_all_command = {
+        "command": ":kick all"
+    }
+
+    try:
+        response = requests.post(f"{API_BASE}/command", headers=HEADERS_POST, json=kick_all_command)
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="Kick All Sent ✅",
+                description="All players have been kicked from the server.",
+                color=discord.Color.green()
+            )
+            await channel.send(embed=embed)
+        elif response.status_code == 422:
+            embed = discord.Embed(
+                title="No Players to Kick ⚠️",
+                description="Kick all failed — no players were left in the server.",
+                color=discord.Color.gold()
+            )
+            await channel.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="Failed to Kick ❌",
+                description=f"API responded with status code `{response.status_code}` when kicking.",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error Sending Kick Command ❌",
+            description=f"An exception occurred: `{e}`",
+            color=discord.Color.red()
+        )
+        await channel.send(embed=embed)
+
+
+@erlc_group.command(name="shutdown", description="Send a server shutdown message to the ER:LC server")
+async def shutdown_erlc(interaction: discord.Interaction):
+    member = interaction.guild.get_member(interaction.user.id)
+    REQUIRED_ROLE_ID = 1316076193459474525
+
+    if not member or REQUIRED_ROLE_ID not in [role.id for role in member.roles]:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Permission Denied ❌",
+                description="You must have the Staff role to use this command.",
+                color=discord.Color.red()
+            ),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+    await send_the_emergency_shutdown_message(interaction.channel)
 
 # --- PRC API HANDLING ---
 
@@ -4370,7 +4609,7 @@ async def set_restriction(interaction: discord.Interaction, vehicle: str, role: 
 async def check_staff_livery():
     headers = {"server-key": API_KEY}
     try:
-        resp = requests.get(PRC_VEHICLES_URL, headers=headers)
+        resp = requests.get({API_BASE}/vehicles, headers=headers)
         if resp.status_code != 200:
             print(f"Failed to fetch vehicles: {resp.status_code}")
             return
@@ -4417,6 +4656,186 @@ async def check_staff_livery():
             
     except Exception as e:
         print(f"Error fetching or processing vehicles: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Join voice channel command
+@bot.tree.command(name="join_voice_channel", description="Make the bot join your voice channel")
+async def join_voice_channel(interaction: discord.Interaction):
+    voice_state = interaction.user.voice
+    if not voice_state or not voice_state.channel:
+        await interaction.response.send_message("❌ You are not connected to any voice channel.", ephemeral=True)
+        return
+
+    channel = voice_state.channel
+    voice_client = interaction.guild.voice_client
+
+    if voice_client:
+        if voice_client.channel.id == channel.id:
+            await interaction.response.send_message(f"✅ I'm already connected to **{channel.name}**.", ephemeral=True)
+            return
+        try:
+            await voice_client.move_to(channel)
+            await interaction.response.send_message(f"✅ Moved to **{channel.name}**.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to move: {e}", ephemeral=True)
+    else:
+        try:
+            await channel.connect()
+            await interaction.response.send_message(f"✅ Joined **{channel.name}**.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
+
+# Leave voice channel command
+@bot.tree.command(name="leave_voice_channel", description="Make the bot leave its current voice channel")
+async def leave_voice_channel(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_connected():
+        try:
+            await voice_client.disconnect()
+            await interaction.response.send_message("👋 Left the voice channel.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
+
+# Additional commands
+
+@bot.tree.command(name="pause_voice", description="Pause the currently playing audio")
+async def pause_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_playing():
+        voice_client.pause()
+        await interaction.response.send_message("⏸️ Paused the audio.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ No audio is currently playing.", ephemeral=True)
+
+@bot.tree.command(name="resume_voice", description="Resume paused audio")
+async def resume_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_paused():
+        voice_client.resume()
+        await interaction.response.send_message("▶️ Resumed the audio.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ No audio is currently paused.", ephemeral=True)
+
+@bot.tree.command(name="stop_voice", description="Stop the audio and disconnect from voice channel")
+async def stop_voice(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+
+    if voice_client:
+        if voice_client.is_playing() or voice_client.is_paused():
+            voice_client.stop()
+        try:
+            await voice_client.disconnect()
+            await interaction.response.send_message("🛑 Stopped and left the voice channel.", ephemeral=True)
+        except discord.DiscordException as e:
+            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
