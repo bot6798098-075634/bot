@@ -74,6 +74,10 @@ session: aiohttp.ClientSession | None = None
 
 @bot.event
 async def on_ready():
+    # Add command groups before syncing
+    bot.tree.add_command(erlc_group)
+    bot.tree.add_command(discord_group)
+
     # Sync commands
     await bot.tree.sync()  # Global sync
     await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild sync
@@ -92,10 +96,6 @@ async def on_ready():
     update_vc_status.start()
     check_staff_livery.start()
 
-    # Add the command group to the command tree
-    bot.tree.add_command(erlc_group)
-    bot.tree.add_command(discord_group)
-
     # Set presence to DND with a watching status
     await bot.change_presence(
         status=discord.Status.dnd,
@@ -104,6 +104,7 @@ async def on_ready():
 
     print(f"{bot.user} has connected to Discord and is watching over the server.")
     print("-----------------------------------------------------------------------")
+
 
 # ---------------------------------------------------------------------------------------------------------
 
