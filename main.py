@@ -1031,122 +1031,15 @@ async def shift_leaderboard(interaction: discord.Interaction):
 
 
 
-# --- Config ---
 
-PROFANITY_LIST = {'badword1', 'badword2', 'badword3'}
 
-TRUSTED_DOMAINS = {'trustedwebsite.com', 'anothertrusted.com'}
 
-WHITELISTED_ROLES = {'VIP'}  # Use role names or IDs, be consistent
-WHITELISTED_CHANNELS = {'staff-chat'}  # Use channel names or IDs, be consistent
 
-# --- State for spam detection ---
 
-MESSAGE_HISTORY = defaultdict(list)
-ATTACHMENT_HISTORY = defaultdict(list)
-MENTION_HISTORY = defaultdict(list)
 
-# --- Helper functions ---
 
-def contains_profanity(message_content: str) -> bool:
-    content = message_content.lower()
-    return any(word in content for word in PROFANITY_LIST)
 
-def contains_untrusted_link(message_content: str) -> bool:
-    url_pattern = re.compile(r'https?://[^\s]+')
-    links = url_pattern.findall(message_content)
 
-    if not links:
-        return False
-
-    for link in links:
-        if any(domain in link for domain in TRUSTED_DOMAINS):
-            continue  # allow this link
-        return True  # found untrusted link
-
-    return False
-
-def is_overly_capitalized(message_content: str) -> bool:
-    if len(message_content) <= 10:
-        return False
-    upper_count = sum(1 for c in message_content if c.isupper())
-    percentage_upper = (upper_count / len(message_content)) * 100
-    return percentage_upper > 80
-
-# --- Your main event (paste inside your bot file) ---
-
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    # Whitelist checks by channel and role
-    if (
-        (message.channel.name in WHITELISTED_CHANNELS or str(message.channel.id) in WHITELISTED_CHANNELS)
-    ):
-        return
-
-    member = message.author
-    if hasattr(message, "guild") and message.guild and isinstance(member, discord.Member):
-        if any(
-            (role.name in WHITELISTED_ROLES or str(role.id) in WHITELISTED_ROLES)
-            for role in member.roles
-        ):
-            return
-
-    content = message.content
-
-    # Profanity
-    if contains_profanity(content):
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, your message was deleted due to inappropriate content.", delete_after=10)
-        return
-
-    # Links (block untrusted)
-    if contains_untrusted_link(content):
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, links are not allowed in this channel.", delete_after=10)
-        return
-
-    # Over-capitalization
-    if is_overly_capitalized(content):
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, your message was deleted because it is overly capitalized.", delete_after=10)
-        return
-
-    # Spam detections based on timestamps (seconds)
-    current_time = message.created_at.timestamp()
-    user_id = message.author.id
-
-    # Attachment spam
-    if message.attachments:
-        ATTACHMENT_HISTORY[user_id].append(current_time)
-    ATTACHMENT_HISTORY[user_id] = [t for t in ATTACHMENT_HISTORY[user_id] if current_time - t < 5]
-    if len(ATTACHMENT_HISTORY[user_id]) > 5:
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, you are spamming attachments and your message was deleted.", delete_after=10)
-        return
-
-    # Mention spam
-    mention_count = len(message.mentions)
-    if mention_count > 3:
-        MENTION_HISTORY[user_id].append(current_time)
-    MENTION_HISTORY[user_id] = [t for t in MENTION_HISTORY[user_id] if current_time - t < 4]
-    if len(MENTION_HISTORY[user_id]) > 3:
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, you are spamming mentions and your message was deleted.", delete_after=10)
-        return
-
-    # Message spam
-    MESSAGE_HISTORY[user_id].append(current_time)
-    MESSAGE_HISTORY[user_id] = [t for t in MESSAGE_HISTORY[user_id] if current_time - t < 5]
-    if len(MESSAGE_HISTORY[user_id]) > 3:
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, you are spamming and your message was deleted.", delete_after=10)
-        return
-
-    # Finally, process commands if any
-    await bot.process_commands(message)
 
 # Create the /suggestion command
 @bot.tree.command(name="suggestion", description="Submit a suggestion for the bot or server.")
@@ -1554,6 +1447,145 @@ async def mod_panel_error(interaction: discord.Interaction, error):
 
 
 
+# --- Config ---
+
+PROFANITY_LIST = {'badword1', 'badword2', 'badword3'}
+
+TRUSTED_DOMAINS = {'trustedwebsite.com', 'anothertrusted.com'}
+
+WHITELISTED_ROLES = {'VIP'}  # Can be role names or IDs as strings
+WHITELISTED_CHANNELS = {'staff-chat'}  # Can be channel names or IDs as strings
+
+# --- State for spam detection ---
+
+MESSAGE_HISTORY = defaultdict(list)
+ATTACHMENT_HISTORY = defaultdict(list)
+MENTION_HISTORY = defaultdict(list)
+
+# --- Helper functions ---
+
+def contains_profanity(message_content: str) -> bool:
+    content = message_content.lower()
+    return any(word in content for word in PROFANITY_LIST)
+
+def contains_untrusted_link(message_content: str) -> bool:
+    url_pattern = re.compile(r'https?://[^\s]+')
+    links = url_pattern.findall(message_content)
+
+    if not links:
+        return False
+
+    for link in links:
+        if any(domain in link for domain in TRUSTED_DOMAINS):
+            continue  # Trusted link
+        return True  # Found untrusted link
+
+    return False
+
+def is_overly_capitalized(message_content: str) -> bool:
+    if len(message_content) <= 10:
+        return False
+    upper_count = sum(1 for c in message_content if c.isupper())
+    percentage_upper = (upper_count / len(message_content)) * 100
+    return percentage_upper > 80
+
+# --- Main message event ---
+
+@bot.event
+async def on_message(message: discord.Message):
+    # Ignore bot messages
+    if message.author.bot:
+        return
+
+    # Ignore whitelisted channels
+    if (
+        (message.channel.name in WHITELISTED_CHANNELS) or
+        (str(message.channel.id) in WHITELISTED_CHANNELS)
+    ):
+        return
+
+    member = message.author
+    # Ignore users with whitelisted roles
+    if (
+        hasattr(message, "guild") and message.guild and isinstance(member, discord.Member)
+        and any(
+            (role.name in WHITELISTED_ROLES or str(role.id) in WHITELISTED_ROLES)
+            for role in member.roles
+        )
+    ):
+        return
+
+    content = message.content
+
+    # Profanity check
+    if contains_profanity(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, your message was deleted due to inappropriate content.",
+            delete_after=10
+        )
+        return
+
+    # Untrusted link check
+    if contains_untrusted_link(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, links are not allowed in this channel.",
+            delete_after=10
+        )
+        return
+
+    # Over-capitalization check
+    if is_overly_capitalized(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, your message was deleted because it is overly capitalized.",
+            delete_after=10
+        )
+        return
+
+    current_time = message.created_at.timestamp()
+    user_id = message.author.id
+
+    # Attachment spam check
+    if message.attachments:
+        ATTACHMENT_HISTORY[user_id].append(current_time)
+    # Keep timestamps within the last 5 seconds
+    ATTACHMENT_HISTORY[user_id] = [t for t in ATTACHMENT_HISTORY[user_id] if current_time - t < 5]
+    if len(ATTACHMENT_HISTORY[user_id]) > 5:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming attachments and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Mention spam check
+    mention_count = len(message.mentions)
+    if mention_count > 3:
+        MENTION_HISTORY[user_id].append(current_time)
+    MENTION_HISTORY[user_id] = [t for t in MENTION_HISTORY[user_id] if current_time - t < 4]
+    if len(MENTION_HISTORY[user_id]) > 3:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming mentions and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Message spam check
+    MESSAGE_HISTORY[user_id].append(current_time)
+    MESSAGE_HISTORY[user_id] = [t for t in MESSAGE_HISTORY[user_id] if current_time - t < 5]
+    if len(MESSAGE_HISTORY[user_id]) > 3:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Process commands if any
+    await bot.process_commands(message)
 
 
 
