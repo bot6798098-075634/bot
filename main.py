@@ -3155,174 +3155,6 @@ async def erlc_join_leave_log(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="erlc_killlog", description="Fetch the latest kill logs")
-async def kill_log(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/killlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch kill logs, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No kill logs found.")
-        return
-
-    embed = discord.Embed(
-        title="🔪 Kill Logs",
-        color=discord.Color.red(),
-        timestamp = datetime.now(timezone.utc)
-    )
-    for entry in data:
-        ts = entry.get("Timestamp", 0)
-        killer = entry.get("Killer", "Unknown")
-        killed = entry.get("Killed", "Unknown")
-        embed.add_field(name=f"Killed at {datetime.datetime.fromtimestamp(ts, UTC)}", value=f"{killer} killed {killed}", inline=False)
-
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="erlc_info", description="Get SWAT Roleplay Community server info")
-async def erlc_info(interaction: discord.Interaction):
-    await interaction.response.defer()  # In case it takes some time
-
-    headers = {
-        "server-key": API_KEY,
-        "Accept": "*/*"
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(API_BASE, headers=headers) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch server info (status {resp.status})")
-                return
-
-            data = await resp.json()
-
-    # Extract data
-    server_name = data.get("Name", "Unknown")
-    join_code = data.get("JoinKey", "N/A")
-    current_players = data.get("CurrentPlayers", 0)
-    max_players = data.get("MaxPlayers", 0)
-
-    # Fetch queue count from /server/queue
-    queue_url = "https://api.policeroleplay.community/v1/server/queue"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(queue_url, headers=headers) as resp:
-            if resp.status == 200:
-                queue_data = await resp.json()
-                queue_count = len(queue_data)
-            else:
-                queue_count = 0
-
-    embed = discord.Embed(title="SWAT Roleplay Community", color=0x1F8B4C)
-    embed.add_field(name="Server Name", value=server_name, inline=False)
-    embed.add_field(name="Join Code", value=join_code, inline=False)
-    embed.add_field(name="Players", value=f"Current Players: {current_players}/{max_players}", inline=False)
-    embed.add_field(name="Queue", value=f"{queue_count} players", inline=False)
-    embed.set_footer(text="Powered by PRC API")
-
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="erlc_bans", description="Get the list of banned players")
-async def erlc_bans(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/bans", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch banned players, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No banned players found.")
-        return
-
-    embed = discord.Embed(
-        title="🚫 Banned Players",
-        color=discord.Color.red(),
-        timestamp = datetime.now(timezone.utc)
-    )
-    for ban in data:
-        player = ban.get("Player", "Unknown")
-        reason = ban.get("Reason", "No reason provided")
-        embed.add_field(name=player, value=reason, inline=False)
-
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="erlc_players", description="Get the list of online players")
-async def erlc_players(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/players", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch online players, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No online players found.")
-        return
-
-    embed = discord.Embed(
-        title="👥 Online Players",
-        color=discord.Color.green(),
-        timestamp = datetime.now(timezone.utc)
-    )
-    for player in data:
-        embed.add_field(name=player.get("Name", "Unknown"), value=f"ID: {player.get('ID', 'Unknown')}", inline=False)
-
-    await interaction.followup.send(embed=embed)
-
-def send_erlc_vehicles_command():
-    url = f"{API_BASE}/command"
-    headers = {
-        "server-key": API_KEY,
-        "Content-Type": "application/json"
-    }
-    data = {
-        "command": "/erlc_vehicles"
-    }
-    
-    response = requests.post(url, json=data, headers=headers)
-    
-    if response.status_code == 200:
-        print("Command sent successfully!")
-        print("Response:", response.json())
-    else:
-        print(f"Failed to send command: {response.status_code}")
-        print("Response:", response.text)
-
-send_erlc_vehicles_command()
-
-@bot.tree.command(name="erlc_modcalls", description="Get the list of mod calls in the server")
-async def erlc_modcalls(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/modcalls", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch mod calls, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No mod calls found.")
-        return
-
-    embed = discord.Embed(
-        title="📞 Mod Calls",
-        color=discord.Color.purple(),
-        timestamp = datetime.now(timezone.utc)
-    )
-    for call in data:
-        embed.add_field(name=call.get("Caller", "Unknown"), value=f"Reason: {call.get('Reason', 'No reason provided')}", inline=False)
-
-    await interaction.followup.send(embed=embed)
-
 @bot.tree.command(name="erlc_command_logs", description="Get the list of executed commands")
 async def erlc_command_logs(interaction: discord.Interaction): 
     await interaction.response.defer()
@@ -3397,124 +3229,7 @@ async def roblox_user_info(interaction: discord.Interaction, user_id: str):
 
 
 
-# Replace these IDs with your actual IDs
-GUILD_ID = 1343179590247645205
-SHIFT_ROLE_ID = 1343299303459913761
-BREAK_ROLE_ID = 1343299319939207208
-LOG_CHANNEL_ID = 1381409066156425236
 
-@bot.tree.command(name="shift_manage", description="Manage your shift status")
-async def shift_manage(interaction: discord.Interaction):
-    # Only allow in your guild
-    if interaction.guild_id != GUILD_ID:
-        await interaction.response.send_message("This command can only be used in the designated server.", ephemeral=True)
-        return
-
-    # Permission check example: only members with Manage Roles can open the panel
-    if not interaction.user.guild_permissions.manage_roles:
-        await interaction.response.send_message("❌ You do not have permission to manage roles.", ephemeral=True)
-        return
-
-    embed = discord.Embed(
-        title="Shift Management",
-        description="Click a button below to manage your shift status.",
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text="Use the buttons to toggle your shift status.")
-
-    view = discord.ui.View(timeout=None)
-    view.add_item(discord.ui.Button(label="Start Shift", style=discord.ButtonStyle.green, custom_id="start_shift"))
-    view.add_item(discord.ui.Button(label="End Shift", style=discord.ButtonStyle.red, custom_id="end_shift"))
-    view.add_item(discord.ui.Button(label="Take Break", style=discord.ButtonStyle.blurple, custom_id="take_break"))
-    view.add_item(discord.ui.Button(label="Return from Break", style=discord.ButtonStyle.blurple, custom_id="return_break"))
-
-    await interaction.response.send_message(embed=embed, view=view)
-
-
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    # Only handle component (button) interactions with custom_id
-    if interaction.type != discord.InteractionType.component:
-        return
-
-    custom_id = interaction.data.get("custom_id")
-    if not custom_id:
-        return
-
-    # Check guild and member exist
-    guild = bot.get_guild(GUILD_ID)
-    if guild is None:
-        await interaction.response.send_message("❌ Guild not found.", ephemeral=True)
-        return
-
-    member = guild.get_member(interaction.user.id)
-    if member is None:
-        await interaction.response.send_message("❌ Could not find you in the server.", ephemeral=True)
-        return
-
-    role_shift = guild.get_role(SHIFT_ROLE_ID)
-    role_break = guild.get_role(BREAK_ROLE_ID)
-    log_channel = guild.get_channel(LOG_CHANNEL_ID)
-
-    # Check roles exist
-    if role_shift is None or role_break is None:
-        await interaction.response.send_message("❌ One or more required roles not found. Please check role IDs.", ephemeral=True)
-        return
-
-    # Defer response for button interaction to avoid "interaction failed"
-    await interaction.response.defer(ephemeral=True)
-
-    try:
-        if custom_id == "start_shift":
-            if role_shift not in member.roles:
-                await member.add_roles(role_shift, reason="Started shift")
-                if role_break in member.roles:
-                    await member.remove_roles(role_break, reason="Break ended due to shift start")
-                if log_channel:
-                    await log_channel.send(f"✅ {member.mention} has **started their shift**.")
-                await interaction.followup.send("You have started your shift. ✅", ephemeral=True)
-            else:
-                await interaction.followup.send("You are already on shift.", ephemeral=True)
-
-        elif custom_id == "end_shift":
-            if role_shift in member.roles:
-                await member.remove_roles(role_shift, reason="Ended shift")
-                if role_break in member.roles:
-                    await member.remove_roles(role_break, reason="Ended shift break cleanup")
-                if log_channel:
-                    await log_channel.send(f"❌ {member.mention} has **ended their shift**.")
-                await interaction.followup.send("You have ended your shift. ❌", ephemeral=True)
-            else:
-                await interaction.followup.send("You are not currently on shift.", ephemeral=True)
-
-        elif custom_id == "take_break":
-            if role_shift not in member.roles:
-                await interaction.followup.send("You must be on shift to take a break.", ephemeral=True)
-                return
-
-            if role_break not in member.roles:
-                await member.add_roles(role_break, reason="Started break")
-                if log_channel:
-                    await log_channel.send(f"⏸️ {member.mention} has **started a break**.")
-                await interaction.followup.send("You are now on break. ⏸️", ephemeral=True)
-            else:
-                await interaction.followup.send("You are already on break.", ephemeral=True)
-
-        elif custom_id == "return_break":
-            if role_break in member.roles:
-                await member.remove_roles(role_break, reason="Returned from break")
-                if log_channel:
-                    await log_channel.send(f"▶️ {member.mention} has **returned from break**.")
-                await interaction.followup.send("You have returned from your break. ▶️", ephemeral=True)
-            else:
-                await interaction.followup.send("You are not currently on a break.", ephemeral=True)
-        else:
-            await interaction.followup.send("Unknown button action.", ephemeral=True)
-
-    except discord.Forbidden:
-        await interaction.followup.send("❌ I do not have permission to manage your roles.", ephemeral=True)
-    except Exception as e:
-        await interaction.followup.send(f"❌ An error occurred: {e}", ephemeral=True)
 
 # Colors
 SUCCESS_COLOR = discord.Color.green()
@@ -3876,88 +3591,6 @@ async def check(interaction: discord.Interaction):
 def close_session():
     if session and not session.closed:
         bot.loop.run_until_complete(session.close())
-
-# The /erlc command subcommand: /erlc command
-@erlc_group.command(name="command", description="Run a PRC command on your ER:LC server")
-@app_commands.describe(command="The command to send (e.g. :h Hello!)")
-async def erlc_command(interaction: discord.Interaction, command: str):
-    await interaction.response.defer(ephemeral=True, thinking=True)
-
-    # Permissions
-    has_staff = any(role.id == STAFF_ROLE_ID for role in interaction.user.roles)
-    has_priv = any(role.id == PRIV_ROLE_ID for role in interaction.user.roles)
-
-    restricted = [":ban", ":kick", ":mod", ":unmod", ":admin", ":unadmin"]
-    if any(word in command.lower() for word in restricted) and not has_priv:
-        return await interaction.followup.send(embed=error_embed(
-            "Permission Denied",
-            "You do not have permission to run privileged commands.",
-            interaction.guild
-        ))
-
-    if not has_staff:
-        return await interaction.followup.send(embed=error_embed(
-            "Unauthorized",
-            "You must have the Staff role to run this command.",
-            interaction.guild
-        ))
-
-    if not command.startswith(":"):
-        command = ":" + command
-
-    # Send to PRC API
-    try:
-        url = f"{API_BASE}/command"
-        headers = {
-            "server-key": API_KEY,
-            "Content-Type": "application/json"
-        }
-        payload = {"command": command}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                status = resp.status
-                response_text = await resp.text()
-
-        if status == 200:
-            result = "✅ Successfully Ran"
-            await interaction.followup.send(embed=success_embed(
-                "Command Executed",
-                "Your command was successfully sent to the server.",
-                interaction.guild
-            ))
-        else:
-            result = get_error_message(status, response_text)
-            await interaction.followup.send(embed=error_embed(
-                "Command Failed",
-                f"The command failed to execute.\n**Reason:** {result}",
-                interaction.guild
-            ))
-
-        # Log to channel
-        log_channel = interaction.guild.get_channel(LOGS_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(title="📄 Command Log", color=discord.Color.blue())
-            embed.add_field(name="👤 User", value=interaction.user.mention, inline=False)
-            embed.add_field(name="💬 Command", value=discord.utils.escape_markdown(command), inline=False)
-            embed.add_field(name="📊 Result", value=result, inline=False)
-            if interaction.guild and interaction.guild.icon:
-                embed.set_thumbnail(url=interaction.guild.icon.url)
-            embed.set_footer(text="SWAT Roleplay Community")
-            await log_channel.send(embed=embed)
-
-    except aiohttp.ClientError as e:
-        await interaction.followup.send(embed=error_embed(
-            "API Connection Error",
-            f"Could not reach PRC API: `{str(e)}`",
-            interaction.guild
-        ))
-    except Exception as e:
-        await interaction.followup.send(embed=error_embed(
-            "Discord Error",
-            f"An unexpected error occurred: `{str(e)}`",
-            interaction.guild
-        ))
 
 # ===== Embed Helpers =====
 
@@ -4668,7 +4301,124 @@ async def check_staff_livery():
 
 
 
+# Replace these IDs with your actual IDs
+GUILD_ID = 1343179590247645205
+SHIFT_ROLE_ID = 1343299303459913761
+BREAK_ROLE_ID = 1343299319939207208
+LOG_CHANNEL_ID = 1381409066156425236
 
+@bot.tree.command(name="shift_manage", description="Manage your shift status")
+async def shift_manage(interaction: discord.Interaction):
+    # Only allow in your guild
+    if interaction.guild_id != GUILD_ID:
+        await interaction.response.send_message("This command can only be used in the designated server.", ephemeral=True)
+        return
+
+    # Permission check example: only members with Manage Roles can open the panel
+    if not interaction.user.guild_permissions.manage_roles:
+        await interaction.response.send_message("❌ You do not have permission to manage roles.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="Shift Management",
+        description="Click a button below to manage your shift status.",
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text="Use the buttons to toggle your shift status.")
+
+    view = discord.ui.View(timeout=None)
+    view.add_item(discord.ui.Button(label="Start Shift", style=discord.ButtonStyle.green, custom_id="start_shift"))
+    view.add_item(discord.ui.Button(label="End Shift", style=discord.ButtonStyle.red, custom_id="end_shift"))
+    view.add_item(discord.ui.Button(label="Take Break", style=discord.ButtonStyle.blurple, custom_id="take_break"))
+    view.add_item(discord.ui.Button(label="Return from Break", style=discord.ButtonStyle.blurple, custom_id="return_break"))
+
+    await interaction.response.send_message(embed=embed, view=view)
+
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    # Only handle component (button) interactions with custom_id
+    if interaction.type != discord.InteractionType.component:
+        return
+
+    custom_id = interaction.data.get("custom_id")
+    if not custom_id:
+        return
+
+    # Check guild and member exist
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        await interaction.response.send_message("❌ Guild not found.", ephemeral=True)
+        return
+
+    member = guild.get_member(interaction.user.id)
+    if member is None:
+        await interaction.response.send_message("❌ Could not find you in the server.", ephemeral=True)
+        return
+
+    role_shift = guild.get_role(SHIFT_ROLE_ID)
+    role_break = guild.get_role(BREAK_ROLE_ID)
+    log_channel = guild.get_channel(LOG_CHANNEL_ID)
+
+    # Check roles exist
+    if role_shift is None or role_break is None:
+        await interaction.response.send_message("❌ One or more required roles not found. Please check role IDs.", ephemeral=True)
+        return
+
+    # Defer response for button interaction to avoid "interaction failed"
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        if custom_id == "start_shift":
+            if role_shift not in member.roles:
+                await member.add_roles(role_shift, reason="Started shift")
+                if role_break in member.roles:
+                    await member.remove_roles(role_break, reason="Break ended due to shift start")
+                if log_channel:
+                    await log_channel.send(f"✅ {member.mention} has **started their shift**.")
+                await interaction.followup.send("You have started your shift. ✅", ephemeral=True)
+            else:
+                await interaction.followup.send("You are already on shift.", ephemeral=True)
+
+        elif custom_id == "end_shift":
+            if role_shift in member.roles:
+                await member.remove_roles(role_shift, reason="Ended shift")
+                if role_break in member.roles:
+                    await member.remove_roles(role_break, reason="Ended shift break cleanup")
+                if log_channel:
+                    await log_channel.send(f"❌ {member.mention} has **ended their shift**.")
+                await interaction.followup.send("You have ended your shift. ❌", ephemeral=True)
+            else:
+                await interaction.followup.send("You are not currently on shift.", ephemeral=True)
+
+        elif custom_id == "take_break":
+            if role_shift not in member.roles:
+                await interaction.followup.send("You must be on shift to take a break.", ephemeral=True)
+                return
+
+            if role_break not in member.roles:
+                await member.add_roles(role_break, reason="Started break")
+                if log_channel:
+                    await log_channel.send(f"⏸️ {member.mention} has **started a break**.")
+                await interaction.followup.send("You are now on break. ⏸️", ephemeral=True)
+            else:
+                await interaction.followup.send("You are already on break.", ephemeral=True)
+
+        elif custom_id == "return_break":
+            if role_break in member.roles:
+                await member.remove_roles(role_break, reason="Returned from break")
+                if log_channel:
+                    await log_channel.send(f"▶️ {member.mention} has **returned from break**.")
+                await interaction.followup.send("You have returned from your break. ▶️", ephemeral=True)
+            else:
+                await interaction.followup.send("You are not currently on a break.", ephemeral=True)
+        else:
+            await interaction.followup.send("Unknown button action.", ephemeral=True)
+
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I do not have permission to manage your roles.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ An error occurred: {e}", ephemeral=True)
 
 
 
