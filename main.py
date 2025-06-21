@@ -4358,25 +4358,23 @@ async def on_interaction(interaction: discord.Interaction):
 
 
 
-PROMOTE_ROLE_ID = 1346578020747575368  # Permission role ID
-LOG_CHANNEL_ID = 1343626047383408663   # Log channel ID
-LOG_FILE = "promotions.txt"
-
+# ===== Save to .txt file =====
 def save_promotion_to_file(user, rank, reason, notes, promoter):
     line = (
-        f"[{datetime.datetime.utcnow().isoformat()}] "
+        f"[{datetime.utcnow().isoformat()}] "
         f"{user} ({user.id}) promoted to {rank.name} by {promoter} ({promoter.id}) - "
         f"Reason: {reason} | Notes: {notes or 'None'}\n"
     )
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line)
 
+# ===== Build Embed =====
 def promotion_embed(user, rank, reason, notes, interaction):
     embed = discord.Embed(
         title="Promotion Notice",
         description=f"**{user.mention}** has been promoted to **{rank.name}**!",
         color=discord.Color.blue(),
-        timestamp=datetime.datetime.utcnow()
+        timestamp=datetime.utcnow()  # ✅ CORRECT usage
     )
     embed.add_field(name="Reason", value=reason, inline=False)
     embed.add_field(name="Notes", value=notes or "None", inline=False)
@@ -4387,6 +4385,7 @@ def promotion_embed(user, rank, reason, notes, interaction):
     embed.set_footer(text="SWAT Roleplay Community")
     return embed
 
+# ===== /promote Command =====
 @bot.tree.command(name="promote", description="Promote a member to a rank (role)")
 @app_commands.describe(
     user="User to promote",
@@ -4401,12 +4400,12 @@ async def promote(
     reason: str,
     notes: str = None
 ):
-    # Permission check
+    # Check permission role
     if PROMOTE_ROLE_ID not in [r.id for r in interaction.user.roles]:
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
 
-    # Role checks
+    # Safety check: bot must be able to assign the role
     if rank.managed or rank >= interaction.guild.me.top_role:
         await interaction.response.send_message("I cannot assign that role.", ephemeral=True)
         return
@@ -4414,32 +4413,28 @@ async def promote(
     try:
         await user.add_roles(rank, reason="Promoted")
     except discord.Forbidden:
-        await interaction.response.send_message("I lack permissions to assign that role.", ephemeral=True)
+        await interaction.response.send_message("I lack permission to assign that role.", ephemeral=True)
         return
 
     embed = promotion_embed(user, rank, reason, notes, interaction)
 
-    # Respond to interaction with embed
+    # Send response in Discord
     await interaction.response.send_message(embed=embed)
 
-    # DM user with embed (no ping in DM)
+    # Try to DM the user
     try:
         await user.send(embed=embed)
     except discord.Forbidden:
         await interaction.followup.send("Could not DM the user.", ephemeral=True)
 
-    # Log channel: ping user in message content then send embed
+    # Log channel: ping the user, then send embed
     log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
-        await log_channel.send(content=user.mention)
+        await log_channel.send(content=user.mention)  # ✅ ping user
         await log_channel.send(embed=embed)
 
     # Save to file
     save_promotion_to_file(user, rank, reason, notes, interaction.user)
-
-
-
-
 
 
 
