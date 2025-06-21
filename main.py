@@ -4357,115 +4357,8 @@ async def on_interaction(interaction: discord.Interaction):
 
 
 
-
-
-
-
-# Join voice channel command
-@bot.tree.command(name="join_voice_channel", description="Make the bot join your voice channel")
-async def join_voice_channel(interaction: discord.Interaction):
-    voice_state = interaction.user.voice
-    if not voice_state or not voice_state.channel:
-        await interaction.response.send_message("❌ You are not connected to any voice channel.", ephemeral=True)
-        return
-
-    channel = voice_state.channel
-    voice_client = interaction.guild.voice_client
-
-    if voice_client:
-        if voice_client.channel.id == channel.id:
-            await interaction.response.send_message(f"✅ I'm already connected to **{channel.name}**.", ephemeral=True)
-            return
-        try:
-            await voice_client.move_to(channel)
-            await interaction.response.send_message(f"✅ Moved to **{channel.name}**.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to move: {e}", ephemeral=True)
-    else:
-        try:
-            await channel.connect()
-            await interaction.response.send_message(f"✅ Joined **{channel.name}**.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to connect: {e}", ephemeral=True)
-
-# Leave voice channel command
-@bot.tree.command(name="leave_voice_channel", description="Make the bot leave its current voice channel")
-async def leave_voice_channel(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_connected():
-        try:
-            await voice_client.disconnect()
-            await interaction.response.send_message("👋 Left the voice channel.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
-
-# Additional commands
-
-@bot.tree.command(name="pause_voice", description="Pause the currently playing audio")
-async def pause_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_playing():
-        voice_client.pause()
-        await interaction.response.send_message("⏸️ Paused the audio.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ No audio is currently playing.", ephemeral=True)
-
-@bot.tree.command(name="resume_voice", description="Resume paused audio")
-async def resume_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client and voice_client.is_paused():
-        voice_client.resume()
-        await interaction.response.send_message("▶️ Resumed the audio.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ No audio is currently paused.", ephemeral=True)
-
-@bot.tree.command(name="stop_voice", description="Stop the audio and disconnect from voice channel")
-async def stop_voice(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-
-    if voice_client:
-        if voice_client.is_playing() or voice_client.is_paused():
-            voice_client.stop()
-        try:
-            await voice_client.disconnect()
-            await interaction.response.send_message("🛑 Stopped and left the voice channel.", ephemeral=True)
-        except discord.DiscordException as e:
-            await interaction.response.send_message(f"❌ Failed to disconnect: {e}", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ I'm not connected to any voice channel.", ephemeral=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-PROMOTE_ROLE_ID = 1346578020747575368
-LOG_CHANNEL_ID = 1343626047383408663
+PROMOTE_ROLE_ID = 1346578020747575368  # Permission role ID
+LOG_CHANNEL_ID = 1343626047383408663   # Log channel ID
 LOG_FILE = "promotions.txt"
 
 def save_promotion_to_file(user, rank, reason, notes, promoter):
@@ -4507,31 +4400,41 @@ async def promote(
     reason: str,
     notes: str = None
 ):
+    # Permission check
     if PROMOTE_ROLE_ID not in [r.id for r in interaction.user.roles]:
-        return await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
 
+    # Role checks
     if rank.managed or rank >= interaction.guild.me.top_role:
-        return await interaction.response.send_message("I cannot assign that role.", ephemeral=True)
+        await interaction.response.send_message("I cannot assign that role.", ephemeral=True)
+        return
 
     try:
         await user.add_roles(rank, reason="Promoted")
     except discord.Forbidden:
-        return await interaction.response.send_message("I lack permissions to assign that role.", ephemeral=True)
+        await interaction.response.send_message("I lack permissions to assign that role.", ephemeral=True)
+        return
 
     embed = promotion_embed(user, rank, reason, notes, interaction)
+
+    # Respond to interaction with embed
     await interaction.response.send_message(embed=embed)
 
+    # DM user with embed (no ping in DM)
     try:
         await user.send(embed=embed)
     except discord.Forbidden:
         await interaction.followup.send("Could not DM the user.", ephemeral=True)
 
+    # Log channel: ping user in message content then send embed
     log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
     if log_channel:
+        await log_channel.send(content=user.mention)
         await log_channel.send(embed=embed)
 
+    # Save to file
     save_promotion_to_file(user, rank, reason, notes, interaction.user)
-
 
 
 
