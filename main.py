@@ -4464,20 +4464,8 @@ async def stop_voice(interaction: discord.Interaction):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-PROMOTE_ROLE_ID = 1346578020747575368  # Permission role ID
-LOG_CHANNEL_ID = 1343626047383408663   # Log channel ID
+PROMOTE_ROLE_ID = 1346578020747575368
+LOG_CHANNEL_ID = 1343626047383408663
 LOG_FILE = "promotions.txt"
 
 def save_promotion_to_file(user, rank, reason, notes, promoter):
@@ -4543,30 +4531,6 @@ async def promote(
         await log_channel.send(embed=embed)
 
     save_promotion_to_file(user, rank, reason, notes, interaction.user)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
