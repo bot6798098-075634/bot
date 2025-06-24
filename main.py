@@ -1199,206 +1199,169 @@ STAFF_ROLE_ID = 1343234687505530902  # <-- Replace
 STAFF_LOG_CHANNEL_ID = 1381409066156425236  # <-- Replace
 WARNINGS_FILE = "warnings.json"
 
-# === STATE ===
-MESSAGE_HISTORY = defaultdict(list)
-ATTACHMENT_HISTORY = defaultdict(list)
-MENTION_HISTORY = defaultdict(list)
+# === Embed Helpers ===
+def success_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.green())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
-# Load warnings from file
-try:
-    with open(WARNINGS_FILE, 'r') as f:
-        WARNINGS = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    WARNINGS = {}
+def error_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.red())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
-def save_warnings():
-    with open(WARNINGS_FILE, 'w') as f:
-        json.dump(WARNINGS, f, indent=4)
+def info_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.blue())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
-# === EMBED HELPERS ===
-
-def auto_mod_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.red()).set_footer(text="SWAT Roleplay Community")
-
-def success_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.green()).set_footer(text="SWAT Roleplay Community")
-
-def error_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.red()).set_footer(text="SWAT Roleplay Community")
-
-# === CHECKS ===
-
-def contains_profanity(content: str) -> bool:
-    return any(word in content.lower() for word in PROFANITY_LIST)
-
-def contains_untrusted_link(content: str) -> bool:
-    url_pattern = re.compile(r'https?://[^\s]+')
-    links = url_pattern.findall(content)
-    return any(not any(domain in link for domain in TRUSTED_DOMAINS) for link in links)
-
-def is_overly_capitalized(content: str) -> bool:
-    if len(content) <= 10:
-        return False
-    upper = sum(1 for c in content if c.isupper())
-    return (upper / len(content)) * 100 > 80
-
-async def log_warning(guild: discord.Guild, target: discord.Member, reason: str, moderator: str):
-    log_channel = guild.get_channel(STAFF_LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(
-            title="User Warned",
-            description=f"**User:** {target.mention}\n**Moderator:** {moderator}\n**Reason:** {reason}",
-            color=discord.Color.orange()
-        )
-        embed.set_footer(text="SWAT Roleplay Community")
-        await log_channel.send(embed=embed)
-
-async def warn_user(member: discord.Member, reason: str, moderator: discord.Member | None = None):
-    guild_id = str(member.guild.id)
-    user_id = str(member.id)
-    mod_id = str(moderator.id) if moderator else "AutoMod"
-
-    if guild_id not in WARNINGS:
-        WARNINGS[guild_id] = {}
-    if user_id not in WARNINGS[guild_id]:
-        WARNINGS[guild_id][user_id] = []
-
-    WARNINGS[guild_id][user_id].append({"moderator": mod_id, "reason": reason})
-    save_warnings()
-
+# === Load/Save warnings ===
+def load_warnings():
     try:
-        dm_embed = auto_mod_embed("You have been warned", f"You were warned for: **{reason}**\nModerator: {moderator.mention if moderator else 'AutoMod'}")
-        await member.send(embed=dm_embed)
-    except discord.Forbidden:
-        pass
+        with open(WARNINGS_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-    await log_warning(member.guild, member, reason, moderator.mention if moderator else "AutoMod")
+def save_warnings(data):
+    with open(WARNINGS_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-    # Timeout if 2+ warnings
-    if len(WARNINGS[guild_id][user_id]) >= 2:
-        if member.guild_permissions.administrator:
-            return
-        try:
-            await member.timeout(timedelta(minutes=10), reason="Reached 2 warnings")
-            await log_warning(member.guild, member, "Timed out for 10 minutes (2+ warnings)", "AutoMod")
-        except Exception:
-            pass
+warnings_data = load_warnings()
 
-# === MAIN MESSAGE HANDLER ===
+# === Helper: Check staff role ===
+def is_staff(member: discord.Member) -> bool:
+    return any(role.id == STAFF_ROLE_ID for role in member.roles)
 
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    if message.channel.name in WHITELISTED_CHANNELS or str(message.channel.id) in WHITELISTED_CHANNELS:
-        return
-
-    if not any(role.id == STAFF_ROLE_ID for role in message.author.roles):
-        pass  # Continue with checks
-
-    content = message.content
-    user_id = message.author.id
-    current_time = message.created_at.timestamp()
-
-    # Profanity
-    if contains_profanity(content):
-        await message.delete()
-        await warn_user(message.author, "Inappropriate language")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    # Untrusted link
-    if contains_untrusted_link(content):
-        await message.delete()
-        await warn_user(message.author, "Untrusted link")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    # Caps spam
-    if is_overly_capitalized(content):
-        await message.delete()
-        await warn_user(message.author, "Excessive capitalization")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    # Attachment spam
-    if message.attachments:
-        ATTACHMENT_HISTORY[user_id].append(current_time)
-    ATTACHMENT_HISTORY[user_id] = [t for t in ATTACHMENT_HISTORY[user_id] if current_time - t < 5]
-    if len(ATTACHMENT_HISTORY[user_id]) > 5:
-        await message.delete()
-        await warn_user(message.author, "Attachment spam")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    # Mention spam
-    if len(message.mentions) > 3:
-        MENTION_HISTORY[user_id].append(current_time)
-    MENTION_HISTORY[user_id] = [t for t in MENTION_HISTORY[user_id] if current_time - t < 4]
-    if len(MENTION_HISTORY[user_id]) > 3:
-        await message.delete()
-        await warn_user(message.author, "Mention spam")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    # Message spam
-    MESSAGE_HISTORY[user_id].append(current_time)
-    MESSAGE_HISTORY[user_id] = [t for t in MESSAGE_HISTORY[user_id] if current_time - t < 5]
-    if len(MESSAGE_HISTORY[user_id]) > 3:
-        await message.delete()
-        await warn_user(message.author, "Message spam")
-        await message.channel.send(embed=auto_mod_embed("Warning Issued", f"{message.author.mention}, your message was deleted."), delete_after=10)
-        return
-
-    await bot.process_commands(message)
-
-# === SLASH COMMANDS ===
-
-@bot.tree.command(name="warn")
+# === Warn command ===
+@bot.tree.command(name="warn", description="Warn a user with a reason")
 @app_commands.describe(user="User to warn", reason="Reason for warning")
 async def warn(interaction: discord.Interaction, user: discord.Member, reason: str):
-    if not any(role.id == STAFF_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command."), ephemeral=True)
+    if not is_staff(interaction.user):
+        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command.", interaction.guild), ephemeral=True)
         return
-    await warn_user(user, reason, interaction.user)
-    await interaction.response.send_message(embed=success_embed("User Warned", f"{user.mention} was warned for: **{reason}**"))
 
-@bot.tree.command(name="unwarn")
-@app_commands.describe(user="User to remove a warning from")
+    guild_id = str(interaction.guild.id)
+    user_id = str(user.id)
+
+    if guild_id not in warnings_data:
+        warnings_data[guild_id] = {}
+    if user_id not in warnings_data[guild_id]:
+        warnings_data[guild_id][user_id] = []
+
+    warnings_data[guild_id][user_id].append({
+        "reason": reason,
+        "moderator": interaction.user.id,
+        "timestamp": interaction.created_at.isoformat()
+    })
+    save_warnings(warnings_data)
+
+    # DM user
+    try:
+        dm_embed = error_embed(
+            "You Have Been Warned",
+            f"You were warned in **{interaction.guild.name}** for:\n**{reason}**",
+            interaction.guild
+        )
+        await user.send(embed=dm_embed)
+    except discord.Forbidden:
+        pass  # Can't DM
+
+    # Timeout user if 2 or more warnings
+    if len(warnings_data[guild_id][user_id]) >= 2:
+        try:
+            # Timeout for 10 minutes
+            await user.timeout(duration=600, reason="Exceeded 2 warnings")
+        except discord.Forbidden:
+            # bot missing permissions to timeout
+            pass
+
+    # Log to staff channel
+    log_channel = interaction.guild.get_channel(STAFF_LOG_CHANNEL_ID)
+    if log_channel:
+        log_embed = info_embed(
+            "User Warned",
+            f"**User:** {user.mention}\n**Moderator:** {interaction.user.mention}\n**Reason:** {reason}\n**Total Warnings:** {len(warnings_data[guild_id][user_id])}",
+            interaction.guild
+        )
+        await log_channel.send(embed=log_embed)
+
+    await interaction.response.send_message(embed=success_embed("User Warned", f"{user.mention} was warned for: **{reason}**", interaction.guild))
+
+# === Unwarn command ===
+@bot.tree.command(name="unwarn", description="Remove last warning from a user")
+@app_commands.describe(user="User to remove warning from")
 async def unwarn(interaction: discord.Interaction, user: discord.Member):
-    if not any(role.id == STAFF_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command."), ephemeral=True)
+    if not is_staff(interaction.user):
+        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command.", interaction.guild), ephemeral=True)
         return
+
     guild_id = str(interaction.guild.id)
     user_id = str(user.id)
 
-    if guild_id not in WARNINGS or user_id not in WARNINGS[guild_id] or not WARNINGS[guild_id][user_id]:
-        await interaction.response.send_message(embed=error_embed("No Warnings", f"{user.mention} has no warnings."), ephemeral=True)
+    if guild_id not in warnings_data or user_id not in warnings_data[guild_id] or not warnings_data[guild_id][user_id]:
+        await interaction.response.send_message(embed=error_embed("No Warnings", f"{user.mention} has no warnings.", interaction.guild), ephemeral=True)
         return
 
-    WARNINGS[guild_id][user_id].pop()
-    save_warnings()
-    await interaction.response.send_message(embed=success_embed("Warning Removed", f"Last warning removed for {user.mention}"))
+    removed_warning = warnings_data[guild_id][user_id].pop()
+    save_warnings(warnings_data)
 
-@bot.tree.command(name="warns")
-@app_commands.describe(user="User to check warnings for")
+    # Remove timeout if warnings < 2
+    if len(warnings_data[guild_id][user_id]) < 2:
+        try:
+            await user.remove_timeout()
+        except discord.Forbidden:
+            pass
+
+    # Log to staff channel
+    log_channel = interaction.guild.get_channel(STAFF_LOG_CHANNEL_ID)
+    if log_channel:
+        log_embed = info_embed(
+            "Warning Removed",
+            f"**User:** {user.mention}\n**Moderator:** {interaction.user.mention}\n**Removed Reason:** {removed_warning['reason']}\n**Remaining Warnings:** {len(warnings_data[guild_id][user_id])}",
+            interaction.guild
+        )
+        await log_channel.send(embed=log_embed)
+
+    await interaction.response.send_message(embed=success_embed("Warning Removed", f"Last warning removed for {user.mention}", interaction.guild))
+
+# === Warns command ===
+@bot.tree.command(name="warns", description="Show warnings for a user")
+@app_commands.describe(user="User to show warnings for")
 async def warns(interaction: discord.Interaction, user: discord.Member):
-    guild_id = str(interaction.guild.id)
-    user_id = str(user.id)
-    warns_list = WARNINGS.get(guild_id, {}).get(user_id, [])
-
-    if not warns_list:
-        await interaction.response.send_message(embed=success_embed("No Warnings", f"{user.mention} has no warnings."), ephemeral=True)
+    if not is_staff(interaction.user):
+        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command.", interaction.guild), ephemeral=True)
         return
 
-    desc = ""
-    for i, entry in enumerate(warns_list, 1):
-        mod = f"<@{entry['moderator']}>" if entry['moderator'] != "AutoMod" else "AutoMod"
-        desc += f"**{i}.** {entry['reason']} - {mod}\n"
+    guild_id = str(interaction.guild.id)
+    user_id = str(user.id)
 
-    embed = discord.Embed(title=f"Warnings for {user}", description=desc, color=discord.Color.orange())
+    user_warnings = warnings_data.get(guild_id, {}).get(user_id, [])
+
+    if not user_warnings:
+        await interaction.response.send_message(embed=success_embed("No Warnings", f"{user.mention} has no warnings.", interaction.guild), ephemeral=True)
+        return
+
+    embed = discord.Embed(title=f"Warnings for {user}", color=discord.Color.orange())
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
+
+    for i, warn in enumerate(user_warnings[-10:], start=1):
+        mod = f"<@{warn['moderator']}>"
+        date = warn.get("timestamp", "Unknown date")
+        embed.add_field(
+            name=f"{i}. Warned on {date}",
+            value=f"Reason: {warn['reason']}\nModerator: {mod}",
+            inline=False
+        )
+
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -1407,14 +1370,26 @@ async def warns(interaction: discord.Interaction, user: discord.Member):
 PROMOTIONS_FILE = "promotions.json"
 
 # === Embed Helpers ===
-def success_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.green()).set_footer(text="SWAT Roleplay Community")
+def success_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.green())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
-def error_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.red()).set_footer(text="SWAT Roleplay Community")
+def error_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.red())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
-def info_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=discord.Color.blue()).set_footer(text="SWAT Roleplay Community")
+def info_embed(title: str, desc: str, guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(title=title, description=desc, color=discord.Color.blue())
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
 # === Promotion data helpers ===
 def load_promotions():
@@ -1447,20 +1422,20 @@ async def promote(
 ):
     # Staff role check
     if not any(role.id == STAFF_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command."), ephemeral=True)
+        await interaction.response.send_message(embed=error_embed("Permission Denied", "Only staff can use this command.", interaction.guild), ephemeral=True)
         return
 
     # Role hierarchy check
     user_top_role = max(interaction.user.roles, key=lambda r: r.position)
     if rank.position >= user_top_role.position:
-        await interaction.response.send_message(embed=error_embed("Role Hierarchy Violation", "You cannot promote to a role higher or equal to your highest role."), ephemeral=True)
+        await interaction.response.send_message(embed=error_embed("Role Hierarchy Violation", "You cannot promote to a role higher or equal to your highest role.", interaction.guild), ephemeral=True)
         return
 
     # Assign role
     try:
         await user.add_roles(rank, reason=f"Promoted by {interaction.user} for: {reason}")
     except discord.Forbidden:
-        await interaction.response.send_message(embed=error_embed("Error", "I do not have permission to assign that role."), ephemeral=True)
+        await interaction.response.send_message(embed=error_embed("Error", "I do not have permission to assign that role.", interaction.guild), ephemeral=True)
         return
 
     # Save promotion
@@ -1485,7 +1460,8 @@ async def promote(
     try:
         dm_embed = success_embed(
             "You've Been Promoted!",
-            f"You have been promoted to **{rank.name}** in **{interaction.guild.name}**.\n\n**Reason:** {reason}" + (f"\n**Notes:** {notes}" if notes else "")
+            f"You have been promoted to **{rank.name}** in **{interaction.guild.name}**.\n\n**Reason:** {reason}" + (f"\n**Notes:** {notes}" if notes else ""),
+            interaction.guild
         )
         await user.send(embed=dm_embed)
     except discord.Forbidden:
@@ -1497,12 +1473,12 @@ async def promote(
         log_embed = info_embed(
             "User Promoted",
             f"**User:** {user.mention}\n**New Rank:** {rank.mention}\n**Reason:** {reason}\n**Moderator:** {interaction.user.mention}"
-            + (f"\n**Notes:** {notes}" if notes else "")
+            + (f"\n**Notes:** {notes}" if notes else ""),
+            interaction.guild
         )
-        log_embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else discord.Embed.Empty)
         await log_channel.send(embed=log_embed)
 
-    await interaction.response.send_message(embed=success_embed("Promotion Successful", f"{user.mention} has been promoted to {rank.mention}."))
+    await interaction.response.send_message(embed=success_embed("Promotion Successful", f"{user.mention} has been promoted to {rank.mention}.", interaction.guild))
 
 # === Promotions history command ===
 @bot.tree.command(name="promotions", description="Show promotion history for a user")
@@ -1513,10 +1489,12 @@ async def promotions(interaction: discord.Interaction, user: discord.Member):
     user_promotions = promotions_data.get(guild_id, {}).get(user_id, [])
 
     if not user_promotions:
-        await interaction.response.send_message(embed=info_embed("No Promotions", f"No promotion records found for {user.mention}."), ephemeral=True)
+        await interaction.response.send_message(embed=info_embed("No Promotions", f"No promotion records found for {user.mention}.", interaction.guild), ephemeral=True)
         return
 
     embed = discord.Embed(title=f"Promotion History for {user}", color=discord.Color.blue())
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
 
     for i, promo in enumerate(user_promotions[-10:], start=1):  # last 10 promotions
@@ -1530,32 +1508,6 @@ async def promotions(interaction: discord.Interaction, user: discord.Member):
         )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
