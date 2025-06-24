@@ -3762,8 +3762,8 @@ async def modcalls(interaction: discord.Interaction):
 def has_staff_role(member: discord.Member) -> bool:
     return any(role.id == REQUIRED_ROLE_ID for role in member.roles)
 
-CHANNEL_ID = 1382852068816978092
-REQUIRED_ROLE_ID = 1316076193459474525  # Staff role required for emergency shutdown
+CHANNEL_ID = 1343303552604569690
+REQUIRED_ROLE_ID = 1346578198749511700  # Staff role required for emergency shutdown
 last_shutdown_call = 0  # cooldown timestamp
 
 
