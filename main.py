@@ -120,6 +120,138 @@ discord_group = app_commands.Group(name="discord", description="Discord-related 
 # Replace with your target server's ID
 TARGET_SERVER_ID = 1343179590247645205
 
+# Load warnings from the file
+def load_warnings():
+    try:
+        with open('warnings.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+# Save warnings to the file
+def save_warnings(warnings_data):
+    with open('warnings.json', 'w') as f:
+        json.dump(warnings_data, f, indent=4)
+
+# Warnings storage
+warnings = load_warnings()
+
+# Warn command
+@bot.tree.command(name="warn", description="Warn a user for a specific reason")
+async def warn_slash(interaction: discord.Interaction, user: discord.Member, reason: str):
+    user_id = str(user.id)
+    
+    # Initialize the user warning list if it doesn't exist
+    if user_id not in warnings:
+        warnings[user_id] = []
+
+    # Add the new warning to the user's list
+    warnings[user_id].append(reason)
+    save_warnings(warnings)
+
+    # Send confirmation message
+    await interaction.response.send_message(f"{user.mention} has been warned for: {reason}")
+
+# Unwarn command
+@bot.tree.command(name="unwarn", description="Remove a specific warning from a user")
+async def unwarn_slash(interaction: discord.Interaction, user: discord.Member):
+    user_id = str(user.id)
+
+    # Check if the user has any warnings
+    if user_id in warnings and warnings[user_id]:
+        # Create a select menu to choose a warning to remove
+        options = [
+            discord.SelectOption(label=f"Warning {i+1}: {warn[:50]}...", value=str(i))
+            for i, warn in enumerate(warnings[user_id])
+        ]
+        
+        select = Select(placeholder="Choose a warning to remove", options=options)
+        
+        # Create a View and send the select menu
+        async def select_callback(interaction: discord.Interaction):
+            warning_index = int(select.values[0])
+            removed_warning = warnings[user_id].pop(warning_index)  # Remove the selected warning
+            save_warnings(warnings)
+
+            embed = discord.Embed(
+                title="Warning Removed",
+                description=f"Removed the warning: {removed_warning} from {user.mention}.",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text=f"Action taken by {interaction.user.display_name}")
+            await interaction.response.send_message(embed=embed)
+
+        select.callback = select_callback
+        view = View()
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            f"Select the warning you want to remove from {user.mention}:",
+            view=view
+        )
+    else:
+        # Send failure message if no warnings exist
+        embed = discord.Embed(
+            title="No Warnings Found",
+            description=f"{user.mention} has no warnings to remove.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed)
+
+# Warnings command
+@bot.tree.command(name="warnings", description="Show all warnings for a user")
+async def warnings_slash(interaction: discord.Interaction, user: discord.Member):
+    user_id = str(user.id)
+
+    # Check if the user has any warnings
+    if user_id in warnings and warnings[user_id]:
+        warning_list = "\n".join(f"{i+1}. {warn}" for i, warn in enumerate(warnings[user_id]))
+        
+        # Send warning list in an embed
+        embed = discord.Embed(
+            title=f"Warnings for {user.display_name}",
+            description=warning_list,
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+    else:
+        # Send no warnings message in an embed
+        embed = discord.Embed(
+            title=f"No Warnings for {user.display_name}",
+            description=f"{user.mention} has no warnings.",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+
+# Clear all warnings command
+@bot.tree.command(name="clear_all_warnings", description="Clear all warnings for a user")
+async def clear_all_warnings_slash(interaction: discord.Interaction, user: discord.Member):
+    user_id = str(user.id)
+
+    # Check if the user has any warnings
+    if user_id in warnings and warnings[user_id]:
+        # Clear all warnings
+        warnings[user_id] = []
+        save_warnings(warnings)
+        
+        # Send success message in an embed
+        embed = discord.Embed(
+            title="All Warnings Cleared",
+            description=f"All warnings for {user.mention} have been cleared.",
+            color=discord.Color.green()
+        )
+        embed.set_footer(text=f"Action taken by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed)
+    else:
+        # Send message if no warnings exist
+        embed = discord.Embed(
+            title="No Warnings Found",
+            description=f"{user.mention} has no warnings to clear.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed)
+
 # ping slash command
 
 @tree.command(name="ping", description="Check bot's latency")
@@ -1185,6 +1317,106 @@ load_events()
 
 STAFF_ROLE_ID = 1375985192174354442
 
+warnings_db = {}
+
+class ModPanelView(discord.ui.View):
+    def __init__(self, target: discord.Member):
+        super().__init__(timeout=None)
+        self.target = target
+
+    # Buttons
+
+    @discord.ui.button(label="⚠ Warn", style=discord.ButtonStyle.danger)
+    async def warn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        warnings_db[self.target.id] = warnings_db.get(self.target.id, 0) + 1
+        try:
+            await self.target.send(f"You have been warned in **{interaction.guild.name}**. Total warnings: {warnings_db[self.target.id]}")
+        except discord.Forbidden:
+            # Can't DM user, just ignore
+            pass
+        await interaction.response.send_message(
+            f"⚠️ {self.target.mention} warned. Total warnings: `{warnings_db[self.target.id]}`", ephemeral=False
+        )
+
+    @discord.ui.button(label="👢 Kick", style=discord.ButtonStyle.primary)
+    async def kick(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await self.target.kick(reason=f"Kicked by {interaction.user}")
+            await interaction.response.send_message(f"👢 {self.target.mention} has been kicked.", ephemeral=False)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I can't kick this user.", ephemeral=True)
+
+    @discord.ui.button(label="❌ Close Panel", style=discord.ButtonStyle.secondary)
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.message.delete()
+
+    # Dropdown for more actions
+
+    @discord.ui.select(
+        placeholder="More actions...",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(label="View Warnings", description="See how many warnings the user has", emoji="📄"),
+            discord.SelectOption(label="Clear Warnings", description="Remove all warnings from the user", emoji="🧹"),
+            discord.SelectOption(label="Timeout (10 min)", description="Put the user in timeout for 10 minutes", emoji="🔇"),
+        ],
+        row=1,
+    )
+    async def select_action(self, interaction: discord.Interaction, select: discord.ui.Select):
+        choice = select.values[0]
+
+        if choice == "View Warnings":
+            count = warnings_db.get(self.target.id, 0)
+            await interaction.response.send_message(f"🔍 {self.target.mention} has `{count}` warning(s).", ephemeral=True)
+
+        elif choice == "Clear Warnings":
+            if self.target.id in warnings_db:
+                del warnings_db[self.target.id]
+                try:
+                    await self.target.send(f"Your warnings have been cleared in **{interaction.guild.name}**.")
+                except discord.Forbidden:
+                    pass
+                await interaction.response.send_message(f"✅ Cleared all warnings for {self.target.mention}.", ephemeral=False)
+            else:
+                await interaction.response.send_message("🫧 No warnings to clear.", ephemeral=True)
+
+        elif choice == "Timeout (10 min)":
+            try:
+                await self.target.timeout(timedelta(minutes=10), reason=f"Timeout by {interaction.user}")
+                await interaction.response.send_message(f"🔇 {self.target.mention} has been timed out for 10 minutes.", ephemeral=False)
+            except discord.Forbidden:
+                await interaction.response.send_message("❌ I can't timeout this user.", ephemeral=True)
+
+@bot.tree.command(name="mod_panel", description="Open a moderation panel.")
+@app_commands.describe(user="The user to moderate.")
+@app_commands.checks.has_role(STAFF_ROLE_ID)
+async def mod_panel(interaction: discord.Interaction, user: discord.Member):
+    if user == interaction.user:
+        await interaction.response.send_message("❌ You can't moderate yourself.", ephemeral=True)
+        return
+    if user.top_role >= interaction.user.top_role:
+        await interaction.response.send_message("❌ That user has a higher or equal role than you.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="🛠 Moderation Panel",
+        description=f"Choose an action for {user.mention}",
+        color=discord.Color.blurple()
+    )
+    embed.set_thumbnail(url=user.display_avatar.url)
+    embed.add_field(name="Username", value=str(user), inline=True)
+    embed.add_field(name="User ID", value=str(user.id), inline=True)
+    embed.add_field(name="Warnings", value=str(warnings_db.get(user.id, 0)), inline=True)
+    embed.set_footer(text=f"Requested by {interaction.user}", icon_url=interaction.user.display_avatar.url)
+
+    view = ModPanelView(user)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+@mod_panel.error
+async def mod_panel_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingRole):
+        await interaction.response.send_message("🚫 You don't have permission to use this command.", ephemeral=True)
 
 
 
@@ -1225,10 +1457,219 @@ STAFF_ROLE_ID = 1375985192174354442
 
 
 
-                            
-SESSION_VOTE_PING_ROLE_ID = 1346578198749511700
-SESSION_ROLE_ID = 1374839922976100472
-TARGET_CHANNEL_ID = 1343622429901066350
+
+
+
+# --- Config ---
+
+PROFANITY_LIST = {'badword1', 'badword2', 'badword3'}
+
+TRUSTED_DOMAINS = {'trustedwebsite.com', 'anothertrusted.com'}
+
+WHITELISTED_ROLES = {'VIP'}  # Can be role names or IDs as strings
+WHITELISTED_CHANNELS = {'staff-chat'}  # Can be channel names or IDs as strings
+
+# --- State for spam detection ---
+
+MESSAGE_HISTORY = defaultdict(list)
+ATTACHMENT_HISTORY = defaultdict(list)
+MENTION_HISTORY = defaultdict(list)
+
+# --- Helper functions ---
+
+def contains_profanity(message_content: str) -> bool:
+    content = message_content.lower()
+    return any(word in content for word in PROFANITY_LIST)
+
+def contains_untrusted_link(message_content: str) -> bool:
+    url_pattern = re.compile(r'https?://[^\s]+')
+    links = url_pattern.findall(message_content)
+
+    if not links:
+        return False
+
+    for link in links:
+        if any(domain in link for domain in TRUSTED_DOMAINS):
+            continue  # Trusted link
+        return True  # Found untrusted link
+
+    return False
+
+def is_overly_capitalized(message_content: str) -> bool:
+    if len(message_content) <= 10:
+        return False
+    upper_count = sum(1 for c in message_content if c.isupper())
+    percentage_upper = (upper_count / len(message_content)) * 100
+    return percentage_upper > 80
+
+# --- Main message event ---
+
+@bot.event
+async def on_message(message: discord.Message):
+    # Ignore bot messages
+    if message.author.bot:
+        return
+
+    # Ignore whitelisted channels
+    if (
+        (message.channel.name in WHITELISTED_CHANNELS) or
+        (str(message.channel.id) in WHITELISTED_CHANNELS)
+    ):
+        return
+
+    member = message.author
+    # Ignore users with whitelisted roles
+    if (
+        hasattr(message, "guild") and message.guild and isinstance(member, discord.Member)
+        and any(
+            (role.name in WHITELISTED_ROLES or str(role.id) in WHITELISTED_ROLES)
+            for role in member.roles
+        )
+    ):
+        return
+
+    content = message.content
+
+    # Profanity check
+    if contains_profanity(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, your message was deleted due to inappropriate content.",
+            delete_after=10
+        )
+        return
+
+    # Untrusted link check
+    if contains_untrusted_link(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, links are not allowed in this channel.",
+            delete_after=10
+        )
+        return
+
+    # Over-capitalization check
+    if is_overly_capitalized(content):
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, your message was deleted because it is overly capitalized.",
+            delete_after=10
+        )
+        return
+
+    current_time = message.created_at.timestamp()
+    user_id = message.author.id
+
+    # Attachment spam check
+    if message.attachments:
+        ATTACHMENT_HISTORY[user_id].append(current_time)
+    # Keep timestamps within the last 5 seconds
+    ATTACHMENT_HISTORY[user_id] = [t for t in ATTACHMENT_HISTORY[user_id] if current_time - t < 5]
+    if len(ATTACHMENT_HISTORY[user_id]) > 5:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming attachments and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Mention spam check
+    mention_count = len(message.mentions)
+    if mention_count > 3:
+        MENTION_HISTORY[user_id].append(current_time)
+    MENTION_HISTORY[user_id] = [t for t in MENTION_HISTORY[user_id] if current_time - t < 4]
+    if len(MENTION_HISTORY[user_id]) > 3:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming mentions and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Message spam check
+    MESSAGE_HISTORY[user_id].append(current_time)
+    MESSAGE_HISTORY[user_id] = [t for t in MESSAGE_HISTORY[user_id] if current_time - t < 5]
+    if len(MESSAGE_HISTORY[user_id]) > 3:
+        await message.delete()
+        await message.channel.send(
+            f"{message.author.mention}, you are spamming and your message was deleted.",
+            delete_after=10
+        )
+        return
+
+    # Process commands if any
+    await bot.process_commands(message)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SESSION_VOTE_PING_ROLE_ID = 1375985192174354442
+SESSION_ROLE_ID = 1375985192174354442
+TARGET_CHANNEL_ID = 1373707060977340456
 REQUIRED_VOTES = 2
 JOIN_LINK = "https://policeroleplay.community/join?code=SWATxRP&placeId=2534724415"
 
@@ -3917,8 +4358,83 @@ async def on_interaction(interaction: discord.Interaction):
 
 
 
+# ===== Save to .txt file =====
+def save_promotion_to_file(user, rank, reason, notes, promoter):
+    line = (
+        f"[{datetime.utcnow().isoformat()}] "
+        f"{user} ({user.id}) promoted to {rank.name} by {promoter} ({promoter.id}) - "
+        f"Reason: {reason} | Notes: {notes or 'None'}\n"
+    )
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(line)
 
+# ===== Build Embed =====
+def promotion_embed(user, rank, reason, notes, interaction):
+    embed = discord.Embed(
+        title="Promotion Notice",
+        description=f"**{user.mention}** has been promoted to **{rank.name}**!",
+        color=discord.Color.blue(),
+        timestamp=datetime.utcnow()  # ✅ CORRECT usage
+    )
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.add_field(name="Notes", value=notes or "None", inline=False)
+    embed.add_field(name="Promoted By", value=interaction.user.mention, inline=False)
 
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
+
+# ===== /promote Command =====
+@bot.tree.command(name="promote", description="Promote a member to a rank (role)")
+@app_commands.describe(
+    user="User to promote",
+    rank="Role to assign as rank",
+    reason="Reason for promotion",
+    notes="Optional notes"
+)
+async def promote(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    rank: discord.Role,
+    reason: str,
+    notes: str = None
+):
+    # Check permission role
+    if PROMOTE_ROLE_ID not in [r.id for r in interaction.user.roles]:
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+
+    # Safety check: bot must be able to assign the role
+    if rank.managed or rank >= interaction.guild.me.top_role:
+        await interaction.response.send_message("I cannot assign that role.", ephemeral=True)
+        return
+
+    try:
+        await user.add_roles(rank, reason="Promoted")
+    except discord.Forbidden:
+        await interaction.response.send_message("I lack permission to assign that role.", ephemeral=True)
+        return
+
+    embed = promotion_embed(user, rank, reason, notes, interaction)
+
+    # Send response in Discord
+    await interaction.response.send_message(embed=embed)
+
+    # Try to DM the user
+    try:
+        await user.send(embed=embed)
+    except discord.Forbidden:
+        await interaction.followup.send("Could not DM the user.", ephemeral=True)
+
+    # Log channel: ping the user, then send embed
+    log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        await log_channel.send(content=user.mention)  # ✅ ping user
+        await log_channel.send(embed=embed)
+
+    # Save to file
+    save_promotion_to_file(user, rank, reason, notes, interaction.user)
 
 
 
@@ -4564,6 +5080,10 @@ async def help_slash(interaction: discord.Interaction):
         value="</slowmode:1381009161621475385> - Set slowmode in a channel\n"
               "</clear:1381009162170929406> - Clear messages in a channel\n"
               "</nickname:1381009161814540386> - Change a user's nickname\n"
+              "</warn:1381009161621475378> - Warn a member\n"
+              "</warnings:1381009161621475380> - View warnings for a member\n"
+              "</unwarn:1381009161621475379> - Remove a warning\n"
+              "</clear_all_warnings:1381009161621475382> - Clear all warnings\n"
               "</shutdown:1381278435938271296> - Shutdown the bot (OWNER ONLY)\n"
               "</kick:1381009161961078864> - Kick a member\n"
               "</ban:1381009161961078865> - Ban a member\n"
@@ -4655,7 +5175,7 @@ async def help_prefix(ctx):
     # Moderation commands
     embed.add_field(
         name="**⚙️ Moderation**",
-        value="`slowmode`, `clear`, `nickname`, `shutdown`, "
+        value="`slowmode`, `clear`, `nickname`, `warn`, `warnings`, `unwarn`, `clear_all_warnings`, `shutdown`, "
               "`kick`, `ban`, `unban`, `mute`, `unmute`\nUse `/command [command name]` for more details.",
         inline=False
     )
@@ -4742,8 +5262,13 @@ async def command_help_slash(interaction: discord.Interaction, command_name: str
         "events": "View upcoming events.",
         "event": "Create an event.",
         "shutdown": "Shut down the bot (OWNER ONLY).",
+        "clear_all_warnings": "Clear all warnings for a member.",
         "nickname": "Change a user's nickname.",
+        "warn": "Warn a member for breaking the rules.",
+        "warnings": "View all warnings for a member.",
+        "unwarn": "Remove a specific warning from a member.",
         "staff_suggestion": "Submit a suggestion only visible to staff.",
+        "mod_panel": "Open a panel with moderator tools.",
         "report": "Report a user to the moderation team.",
         "setreportticket": "Send the In-Game Report ticket buttons.",
         "settickets": "Send support ticket buttons for various topics.",
@@ -4813,8 +5338,13 @@ async def command_help_prefix(ctx, command_name: str):
         "events": "View upcoming events.",
         "event": "Create an event.",
         "shutdown": "Shut down the bot (OWNER ONLY).",
+        "clear_all_warnings": "Clear all warnings for a member.",
         "nickname": "Change a user's nickname.",
+        "warn": "Warn a member for breaking the rules.",
+        "warnings": "View all warnings for a member.",
+        "unwarn": "Remove a specific warning from a member.",
         "staff_suggestion": "Submit a suggestion only visible to staff.",
+        "mod_panel": "Open a panel with moderator tools.",
         "report": "Report a user to the moderation team.",
         "setreportticket": "Send the In-Game Report ticket buttons.",
         "settickets": "Send support ticket buttons for various topics.",
