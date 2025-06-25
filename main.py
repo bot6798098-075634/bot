@@ -9,7 +9,7 @@ import logging
 from discord import Embed
 import re
 import json
-import time
+import timef
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from discord.ext import commands, tasks
@@ -610,7 +610,6 @@ async def error_logs_slash(interaction: discord.Interaction):
 
     await send_long_message(interaction.followup, content)
 
-# === Optional: prefix version ===
 @bot.command(name="errorlogs")
 async def errorlogs_prefix(ctx):
     if not os.path.exists("error_logs.txt"):
@@ -621,6 +620,7 @@ async def errorlogs_prefix(ctx):
         content = file.read()
 
     await send_long_message(ctx, content)
+
 
 
 
