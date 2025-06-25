@@ -78,6 +78,7 @@ session: aiohttp.ClientSession | None = None
 # groups
 erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC server info with live data.")
 discord_group = app_commands.Group(name="discord", description="Discord-related commands")
+error_group = app_commands.Group(name="error", description="View error logs")
 
 # ---------------------------------------------------------------------------------------------------------
 
@@ -88,6 +89,7 @@ async def on_ready():
     # Add command groups before syncing
     bot.tree.add_command(erlc_group)
     bot.tree.add_command(discord_group)
+    bot.tree.add_command(error_group)  # Add error command group
 
     # Sync commands
     await bot.tree.sync()  # Global sync
@@ -588,33 +590,41 @@ async def remindme_slash(interaction: discord.Interaction, time: int, reminder: 
 
 
 
+# === Helper to split long messages ===
+async def send_long_message(destination, content):
+    max_len = 1990
+    if len(content) <= max_len:
+        await destination.send(f"```\n{content}\n```")
+    else:
+        parts = [content[i:i+max_len] for i in range(0, len(content), max_len)]
+        for part in parts:
+            await destination.send(f"```\n{part}\n```")
 
+# === /error logs Command ===
+@error_group.command(name="logs", description="View the error log file")
+async def error_logs_slash(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True)
 
-# Slash command to send last 20 lines from error.log
-@bot.tree.command(name="error_logs", description="View the latest error logs from the bot.")
-async def error_logs(interaction: discord.Interaction):
-    file_path = "error.log"  # Your log file name
-
-    try:
-        with open(file_path, "r") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        await interaction.response.send_message("⚠️ `error.log` not found.", ephemeral=True)
+    if not os.path.exists("error_logs.txt"):
+        await interaction.followup.send("No error logs found.")
         return
 
-    last_lines = lines[-20:] if len(lines) > 20 else lines
-    log_text = "".join(last_lines)
+    with open("error_logs.txt", "r") as file:
+        content = file.read()
 
-    if len(log_text) > 4000:
-        log_text = log_text[-4000:]  # Truncate to fit in embed
+    await send_long_message(interaction.followup, content)
 
-    embed = discord.Embed(
-        title="🧾 Latest Error Logs",
-        description=f"```log\n{log_text}\n```",
-        color=discord.Color.red()
-    )
+# === Optional: prefix version ===
+@bot.command(name="errorlogs")
+async def errorlogs_prefix(ctx):
+    if not os.path.exists("error_logs.txt"):
+        await ctx.send("No error logs found.")
+        return
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    with open("error_logs.txt", "r") as file:
+        content = file.read()
+
+    await send_long_message(ctx, content)
 
 
 
