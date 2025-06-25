@@ -38,11 +38,6 @@ keep_alive()  # Starts the web server
 
 UTC = timezone.utc
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-logging.basicConfig(filename='error.log', level=logging.ERROR)
-
 load_dotenv()  # This loads the .env file
 
 # Colors
@@ -65,7 +60,8 @@ intents = discord.Intents.all()
 kill_tracker = defaultdict(lambda: deque())
 
 # Create the bot instance with a command prefix and intents
-bot = commands.Bot(command_prefix=".", intents=intents)
+bot = commands.Bot(command_prefix=".", intents=discord.Intents.all())
+
 
 # Set up the slash command tree
 tree = bot.tree
