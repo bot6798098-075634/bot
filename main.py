@@ -73,6 +73,16 @@ tree = bot.tree
 # Global session, created in on_ready
 session: aiohttp.ClientSession | None = None
 
+# ---------------------------------------------------------------------------------------------------------
+
+# groups
+erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC server info with live data.")
+discord_group = app_commands.Group(name="discord", description="Discord-related commands")
+
+# ---------------------------------------------------------------------------------------------------------
+
+    
+
 @bot.event
 async def on_ready():
     # Add command groups before syncing
@@ -81,7 +91,7 @@ async def on_ready():
 
     # Sync commands
     await bot.tree.sync()  # Global sync
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))  # Guild sync
+    await bot.tree.sync(guild=discord.Object(id=1343179590247645205))  # Guild sync
 
     bot.start_time = datetime.now(timezone.utc)
 
@@ -107,15 +117,7 @@ async def on_ready():
     print("-----------------------------------------------------------------------")
 
 
-# ---------------------------------------------------------------------------------------------------------
 
-# groups
-erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC server info with live data.")
-discord_group = app_commands.Group(name="discord", description="Discord-related commands")
-
-# ---------------------------------------------------------------------------------------------------------
-
-    
 
 # Replace with your target server's ID
 TARGET_SERVER_ID = 1343179590247645205
