@@ -631,68 +631,56 @@ async def unafk_prefix(ctx):
 @server_group.command(name="info", description="Get information about the server")
 async def serverinfo_slash(interaction: discord.Interaction):
     guild = interaction.guild
-
-    owner = guild.owner if guild.owner else "Owner not found"
-    owner_mention = owner.mention if guild.owner else owner
+    owner = guild.owner or "Owner not found"
+    owner_mention = owner.mention if isinstance(owner, discord.Member) else owner
 
     embed = discord.Embed(
         title=f"Server Info for {guild.name}",
         color=discord.Color.green()
     )
-
     embed.add_field(name="Server Name", value=guild.name)
     embed.add_field(name="Server ID", value=guild.id)
     embed.add_field(name="Owner", value=owner_mention)
     embed.add_field(name="Member Count", value=guild.member_count)
     embed.add_field(name="Channel Count", value=len(guild.channels))
     embed.add_field(name="Creation Date", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    else:
-        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
-
+    embed.set_thumbnail(url=guild.icon.url if guild.icon else "https://cdn.discordapp.com/embed/avatars/0.png")
     embed.set_footer(text="SWAT Roleplay Community")
 
     await interaction.response.send_message(embed=embed)
 
 # ------------------------ Server Info Prefix Command ------------------------
 
-@bot.command(name="serverinfo")
-async def serverinfo_prefix(ctx):
-    guild = ctx.guild
+@bot.group(name="server", invoke_without_command=True)
+async def server_prefix(ctx):
+    await ctx.send("Usage: `!server info`")
 
-    owner = guild.owner if guild.owner else "Owner not found"
-    owner_mention = owner.mention if guild.owner else owner
+@server_prefix.command(name="info")
+async def server_info_sub(ctx):
+    guild = ctx.guild
+    owner = guild.owner or "Owner not found"
+    owner_mention = owner.mention if isinstance(owner, discord.Member) else owner
 
     embed = discord.Embed(
         title=f"Server Info for {guild.name}",
         color=discord.Color.green()
     )
-
     embed.add_field(name="Server Name", value=guild.name)
     embed.add_field(name="Server ID", value=guild.id)
     embed.add_field(name="Owner", value=owner_mention)
     embed.add_field(name="Member Count", value=guild.member_count)
     embed.add_field(name="Channel Count", value=len(guild.channels))
     embed.add_field(name="Creation Date", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    else:
-        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
-
+    embed.set_thumbnail(url=guild.icon.url if guild.icon else "https://cdn.discordapp.com/embed/avatars/0.png")
     embed.set_footer(text="SWAT Roleplay Community")
 
     await ctx.send(embed=embed)
 
-# Alias to allow using "server info" as prefix command
-@bot.command(name="server")
-async def server_prefix(ctx, *, arg=None):
-    if arg and arg.lower() == "info":
-        await ctx.invoke(bot.get_command("serverinfo"))
-    else:
-        await ctx.send("Usage: `server info`")
+# ---------- Prefix Alias: .serverinfo ----------
+
+@bot.command(name="serverinfo")
+async def serverinfo_alias(ctx):
+    await server_info_sub(ctx)  # Reuse the !server info command
 
 # ------------------------ User Info Slash Command ------------------------
 
