@@ -75,7 +75,7 @@ erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC serv
 discord_group = app_commands.Group(name="discord", description="Discord-related commands")
 error_group = app_commands.Group(name="error", description="View error logs")
 server_group = app_commands.Group(name="server", description="server related commands")
-user_group =app_commands.group(name="user", description="User related commands")
+user_group =app_commands.Group(name="user", description="User related commands")
 role_group = app_commands.Group(name="role", description="Role related commands")
 
 # ========================= Bot start event ========================= 
