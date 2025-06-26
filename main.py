@@ -652,11 +652,11 @@ async def serverinfo_slash(interaction: discord.Interaction):
 # ------------------------ Server Info Prefix Command ------------------------
 
 @bot.group(name="server", invoke_without_command=True)
-async def server_prefix(ctx):
+async def server(ctx):
     await ctx.send("Usage: `!server info`")
 
-@server_prefix.command(name="info")
-async def server_info_sub(ctx):
+@server.command(name="info")
+async def server_info(ctx):
     guild = ctx.guild
     owner = guild.owner or "Owner not found"
     owner_mention = owner.mention if isinstance(owner, discord.Member) else owner
@@ -676,11 +676,10 @@ async def server_info_sub(ctx):
 
     await ctx.send(embed=embed)
 
-# ---------- Prefix Alias: .serverinfo ----------
-
+# Alias !serverinfo to call !server info
 @bot.command(name="serverinfo")
 async def serverinfo_alias(ctx):
-    await server_info_sub(ctx)  # Reuse the !server info command
+    await ctx.invoke(server_info)
 
 # ------------------------ User Info Slash Command ------------------------
 
