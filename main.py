@@ -628,6 +628,9 @@ async def unafk_prefix(ctx):
 
 # ------------------------ Server Info Slash Command ------------------------
 
+# --- Slash Command Group ---
+server_group = app_commands.Group(name="server", description="Server-related commands")
+
 @server_group.command(name="info", description="Get information about the server")
 async def serverinfo_slash(interaction: discord.Interaction):
     guild = interaction.guild
@@ -649,8 +652,9 @@ async def serverinfo_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ Server Info Prefix Command ------------------------
+bot.tree.add_command(server_group)
 
+# --- Prefix Command Group ---
 @bot.group(name="server", invoke_without_command=True)
 async def server(ctx):
     await ctx.send("Usage: `!server info`")
@@ -676,10 +680,11 @@ async def server_info(ctx):
 
     await ctx.send(embed=embed)
 
-# Alias !serverinfo to call !server info
+# Alias !serverinfo to invoke !server info
 @bot.command(name="serverinfo")
 async def serverinfo_alias(ctx):
     await ctx.invoke(server_info)
+
 
 # ------------------------ User Info Slash Command ------------------------
 
