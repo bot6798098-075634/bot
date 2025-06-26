@@ -1,5 +1,3 @@
-
-
 # ========================= Import =========================
 
 import discord
@@ -21,7 +19,6 @@ from discord import app_commands
 from discord.ui import View, Button, Select
 from discord.utils import get
 from discord.raw_models import RawReactionActionEvent
-from dotenv import load_dotenv
 import aiohttp
 from datetime import UTC
 from collections import defaultdict, deque
@@ -41,7 +38,6 @@ import copy
 # ========================= Other =========================
 
 keep_alive()
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,12 +67,12 @@ session: aiohttp.ClientSession | None = None
 
 # ========================= Groups =========================
 
-erlc_group = discord.app_commands.Group(name="erlc", description="Get ER:LC server info with live data.")
-discord_group = app_commands.Group(name="discord", description="Discord-related commands")
-error_group = app_commands.Group(name="error", description="View error logs")
-server_group = app_commands.Group(name="server", description="server related commands")
-user_group =app_commands.Group(name="user", description="User related commands")
-role_group = app_commands.Group(name="role", description="Role related commands")
+erlc_group = discord.app_commands.Group(name="erlc", description="ERLC related commands")
+discord_group = app_commands.Group(name="discord", description="ERLC related commands")
+error_group = app_commands.Group(name="error", description="ERLC related commands")
+server_group = app_commands.Group(name="servergroup", description="ERLC related commands")
+user_group =app_commands.Group(name="user", description="ERLC related commands")
+role_group = app_commands.Group(name="role", description="ERLC related commands")
 
 # ========================= Bot start event ========================= 
 
@@ -627,74 +623,6 @@ async def unafk_prefix(ctx):
 
     await ctx.send(embed=embed)
 
-# ------------------------ Server Info Slash Command ------------------------
-
-@server_group.command(name="info", description="Get information about the server")
-async def serverinfo_slash(interaction: discord.Interaction):
-    guild = interaction.guild
-
-    owner = guild.owner if guild.owner else "Owner not found"
-    owner_mention = owner.mention if guild.owner else owner
-
-    embed = discord.Embed(
-        title=f"Server Info for {guild.name}",
-        color=discord.Color.green()
-    )
-
-    embed.add_field(name="Server Name", value=guild.name)
-    embed.add_field(name="Server ID", value=guild.id)
-    embed.add_field(name="Owner", value=owner_mention)
-    embed.add_field(name="Member Count", value=guild.member_count)
-    embed.add_field(name="Channel Count", value=len(guild.channels))
-    embed.add_field(name="Creation Date", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    else:
-        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
-
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await interaction.response.send_message(embed=embed)
-
-# ------------------------ Server Info Prefix Command ------------------------
-
-@bot.command(name="serverinfo")
-async def serverinfo_prefix(ctx):
-    guild = ctx.guild
-
-    owner = guild.owner if guild.owner else "Owner not found"
-    owner_mention = owner.mention if guild.owner else owner
-
-    embed = discord.Embed(
-        title=f"Server Info for {guild.name}",
-        color=discord.Color.green()
-    )
-
-    embed.add_field(name="Server Name", value=guild.name)
-    embed.add_field(name="Server ID", value=guild.id)
-    embed.add_field(name="Owner", value=owner_mention)
-    embed.add_field(name="Member Count", value=guild.member_count)
-    embed.add_field(name="Channel Count", value=len(guild.channels))
-    embed.add_field(name="Creation Date", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    else:
-        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
-
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# Alias to allow using "server info" as prefix command
-@bot.command(name="server")
-async def server_prefix(ctx, *, arg=None):
-    if arg and arg.lower() == "info":
-        await ctx.invoke(bot.get_command("serverinfo"))
-    else:
-        await ctx.send("Usage: `server info`")
-
 # ------------------------ User Info Slash Command ------------------------
 
 @user_group.command(name="info", description="Get information about a user.")
@@ -847,10 +775,9 @@ async def role_prefix(ctx, *, arg=None):
         await ctx.send("Usage: `role info <role>`")
 
 
-# ------------------------ Server Invite Slash Command ------------------------
-
-@server_group.command(name="invite", description="Get the server's invite link")
-async def server_invite_slash(interaction: discord.Interaction):
+# Slash command /discord invite
+@discord_group.command(name="invite", description="Get the server's invite link")
+async def discord_invite_slash(interaction: discord.Interaction):
     guild = interaction.guild
 
     invites = await guild.invites()
@@ -864,7 +791,7 @@ async def server_invite_slash(interaction: discord.Interaction):
         )
     else:
         embed = discord.Embed(
-            title="{failed_emoji} Server Invite Error",
+            title="❌ Server Invite Error",
             description="Unable to create or fetch an invite. Please check my permissions.",
             color=discord.Color.red()
         )
@@ -875,10 +802,23 @@ async def server_invite_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ Server Invite Prefix Command ------------------------
+# Register the discord_group to your bot tree (somewhere in your setup)
+bot.tree.add_command(discord_group)
 
-@bot.command(name="serverinvite")
-async def serverinvite_prefix(ctx):
+
+# --------- Prefix command for !discord invite ---------
+
+@bot.command(name="discord")
+async def discord_prefix(ctx, *, arg=None):
+    if arg and arg.lower() == "invite":
+        await ctx.invoke(bot.get_command("invite"))
+    else:
+        await ctx.send("Usage: `!discord invite`")
+
+# --------- Prefix command !invite ---------
+
+@bot.command(name="invite")
+async def invite_prefix(ctx):
     guild = ctx.guild
     invites = await guild.invites()
     invite = invites[0] if invites else await ctx.channel.create_invite(max_age=0, reason="Requested by user")
@@ -891,7 +831,7 @@ async def serverinvite_prefix(ctx):
         )
     else:
         embed = discord.Embed(
-            title="{failed_emoji} Server Invite Error",
+            title="❌ Server Invite Error",
             description="Unable to create or fetch an invite. Please check my permissions.",
             color=discord.Color.red()
         )
@@ -902,14 +842,12 @@ async def serverinvite_prefix(ctx):
 
     await ctx.send(embed=embed)
 
-# ------------------------ Alias: .server invite ------------------------
+# --------- Prefix command !discordinvite ---------
 
-@bot.command(name="server")
-async def server_prefix_handler(ctx, *, arg=None):
-    if arg and arg.lower() == "invite":
-        await ctx.invoke(bot.get_command("serverinvite"))
-    else:
-        await ctx.send("Usage: `server invite`")
+@bot.command(name="discordinvite")
+async def discordinvite_prefix(ctx):
+    await ctx.invoke(bot.get_command("invite"))
+
 
 # ------------------------ Nickname Slash Command ------------------------
 
@@ -971,65 +909,6 @@ async def nickname_prefix(ctx, user: discord.Member, *, new_nickname: str):
     embed.set_footer(text="SWAT Roleplay Community")
 
     await ctx.send(embed=embed)
-
-# ------------------------ Server Icon Slash Command ------------------------
-
-@server_group.command(name="icon", description="Display the server's icon")
-async def servericon_slash(interaction: discord.Interaction):
-    guild = interaction.guild
-
-    if guild.icon is None:
-        embed = discord.Embed(
-            title="{failed_emoji} Server Icon Not Set",
-            description="{error_emoji} This server does not have an icon set.",
-            color=discord.Color.red()
-        )
-    else:
-        embed = discord.Embed(
-            title=f"{guild.name} Server Icon",
-            color=discord.Color.blue()
-        )
-        embed.set_image(url=guild.icon.url)
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await interaction.response.send_message(embed=embed)
-
-# ------------------------ Server Icon Prefix Command ------------------------
-
-@bot.command(name="servericon")
-async def servericon_prefix(ctx):
-    guild = ctx.guild
-
-    if guild.icon is None:
-        embed = discord.Embed(
-            title="{falied_emoji} Server Icon Not Set",
-            description="{error_emoji} This server does not have an icon set.",
-            color=discord.Color.red()
-        )
-    else:
-        embed = discord.Embed(
-            title=f"{guild.name} Server Icon",
-            color=discord.Color.blue()
-        )
-        embed.set_image(url=guild.icon.url)
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# ------------------------ Alias: .server icon ------------------------
-
-@bot.command(name="server")
-async def server_prefix_alias(ctx, *, arg=None):
-    if arg and arg.lower() == "icon":
-        await ctx.invoke(bot.get_command("servericon"))
-    else:
-        await ctx.send("Usage: `server icon`")
 
 # ------------------------ Reminder Slash Command Part 1 ------------------------
 
@@ -2054,45 +1933,6 @@ async def dm_prefix(ctx):
         await ctx.send("📬 I sent you a DM with the editable embed and message!", delete_after=15)
     except discord.Forbidden:
         await ctx.send("{failed_emoji} I couldn't DM you. Please check your privacy settings.", delete_after=15)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
