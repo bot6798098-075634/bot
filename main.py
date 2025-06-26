@@ -302,81 +302,7 @@ async def embed_slash(
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ Embed Prefix Command ------------------------
-
-@bot.command(name="embed")
-async def embed_prefix(ctx, *, args=None):
-    staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role not in ctx.author.roles:
-        try:
-            await ctx.message.add_reaction(failed_emoji)
-        except discord.Forbidden:
-            pass
-        return
-
-    # Basic check: require at least title and description
-    # args is a string of all arguments after command
-    # We'll attempt to split it by some separator, e.g. " | "
-    # Or you can require the user to run slash command if no args
-    
-    if not args:
-        await send_wrong_format_message(ctx)
-        return
-
-    # For simplicity, expect the user to separate fields by " | "
-    # like: Title | Description | #color | thumbnail | image | footer | author
-    parts = [part.strip() for part in args.split("|")]
-
-    if len(parts) < 2:
-        await send_wrong_format_message(ctx)
-        return
-
-    title = parts[0]
-    description = parts[1]
-    color = parts[2] if len(parts) > 2 else "#3498db"
-    thumbnail_url = parts[3] if len(parts) > 3 else None
-    image_url = parts[4] if len(parts) > 4 else None
-    footer = parts[5] if len(parts) > 5 else None
-    author = parts[6] if len(parts) > 6 else None
-
-    try:
-        embed_color = discord.Color(int(color.lstrip("#"), 16))
-    except ValueError:
-        await ctx.send(f"{error_emoji} Invalid color! Please use a hex color code like `#3498db`.")
-        return
-
-    embed = discord.Embed(title=title, description=description, color=embed_color)
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
-    if image_url:
-        embed.set_image(url=image_url)
-    if footer:
-        embed.set_footer(text=footer)
-    if author:
-        embed.set_author(name=author)
-
-    await ctx.send(embed=embed)
-
-
-async def send_wrong_format_message(ctx):
-    # Build the embed explaining the proper usage, and ping the user
-    embed = discord.Embed(
-        title="Incorrect command usage",
-        description=(
-            f"-# {ping_emoji} {ctx.author.mention}\n\n"
-            "Please use the slash command `/embed` for this.\n\n"
-            "Example usage:\n"
-            "`/embed title:\"My Title\" description:\"My description\" color:\"#3498db\"`\n\n"
-            "Optional fields: thumbnail_url, image_url, footer, author"
-        ),
-        color=discord.Color.red()
-    )
-    embed.set_footer(text="This message will auto-delete in 10 seconds.")
-
-    msg = await ctx.send(embed=embed)
-
-    # Delete message after 10 seconds
-    await msg.delete(delay=10)
+  
 
 # ------------------------ Slowmode slash command ------------------------
 
@@ -646,9 +572,6 @@ async def unafk_prefix(ctx):
 
 # ------------------------ Server Info Slash Command ------------------------
 
-# --- Slash Command Group ---
-server_group = app_commands.Group(name="server", description="Server-related commands")
-
 @server_group.command(name="info", description="Get information about the server")
 async def serverinfo_slash(interaction: discord.Interaction):
     guild = interaction.guild
@@ -669,40 +592,6 @@ async def serverinfo_slash(interaction: discord.Interaction):
     embed.set_footer(text="SWAT Roleplay Community")
 
     await interaction.response.send_message(embed=embed)
-
-bot.tree.add_command(server_group)
-
-# --- Prefix Command Group ---
-@bot.group(name="server", invoke_without_command=True)
-async def server(ctx):
-    await ctx.send("Usage: `!server info`")
-
-@server.command(name="info")
-async def server_info(ctx):
-    guild = ctx.guild
-    owner = guild.owner or "Owner not found"
-    owner_mention = owner.mention if isinstance(owner, discord.Member) else owner
-
-    embed = discord.Embed(
-        title=f"Server Info for {guild.name}",
-        color=discord.Color.green()
-    )
-    embed.add_field(name="Server Name", value=guild.name)
-    embed.add_field(name="Server ID", value=guild.id)
-    embed.add_field(name="Owner", value=owner_mention)
-    embed.add_field(name="Member Count", value=guild.member_count)
-    embed.add_field(name="Channel Count", value=len(guild.channels))
-    embed.add_field(name="Creation Date", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"))
-    embed.set_thumbnail(url=guild.icon.url if guild.icon else "https://cdn.discordapp.com/embed/avatars/0.png")
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# Alias !serverinfo to invoke !server info
-@bot.command(name="serverinfo")
-async def serverinfo_alias(ctx):
-    await ctx.invoke(server_info)
-
 
 # ------------------------ User Info Slash Command ------------------------
 
@@ -736,56 +625,6 @@ async def userinfo_slash(interaction: discord.Interaction, member: discord.Membe
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ User Info Prefix Command ------------------------
-
-@bot.command(name="userinfo")
-async def userinfo_prefix(ctx, member: discord.Member = None):
-    member = member or ctx.author
-
-    roles = [role.mention for role in member.roles if role != ctx.guild.default_role]
-    roles_display = ", ".join(roles) if roles else "No roles"
-
-    embed = discord.Embed(
-        title=f"👤 User Information: {member}",
-        color=member.color if member.color.value else discord.Color.blue(),
-        timestamp=discord.utils.utcnow()
-    )
-
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else discord.Embed.Empty)
-
-    embed.add_field(name="📝 Username", value=f"{member.name}#{member.discriminator}", inline=True)
-    embed.add_field(name="🆔 User ID", value=member.id, inline=True)
-    embed.add_field(name="📆 Account Created", value=member.created_at.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-    embed.add_field(name="📥 Joined Server", value=member.joined_at.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
-    embed.add_field(name="🎭 Roles", value=roles_display, inline=False)
-    embed.add_field(name="📶 Status", value=str(member.status).title(), inline=True)
-    embed.add_field(name="🤖 Bot?", value="Yes" if member.bot else "No", inline=True)
-
-    embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
-
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)  # optional guild icon thumbnail override
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# Alias to allow "user info" prefix command:
-
-@bot.command(name="user")
-async def user_prefix(ctx, *, arg=None):
-    if arg and arg.lower().startswith("info"):
-        # Try to get member mention or name after 'info'
-        parts = arg.split(maxsplit=1)
-        member = None
-        if len(parts) > 1:
-            try:
-                member = await commands.MemberConverter().convert(ctx, parts[1])
-            except commands.BadArgument:
-                await ctx.send("Member not found.")
-                return
-        await ctx.invoke(bot.get_command("userinfo"), member=member)
-    else:
-        await ctx.send("Usage: `user info [member]`")
 
 # ------------------------ Role Info Slash Command ------------------------
 
@@ -814,46 +653,6 @@ async def roleinfo_slash(interaction: discord.Interaction, role: discord.Role):
 # Register the role group with the tree:
 tree.add_command(role_group)
 
-# ------------------------ Role Info Prefix Command ------------------------
-
-@bot.command(name="roleinfo")
-async def roleinfo_prefix(ctx, *, role: discord.Role):
-    permissions = [perm[0].replace("_", " ").title() for perm in role.permissions if perm[1]]
-    permissions_display = ", ".join(permissions) if permissions else "No permissions"
-
-    embed = discord.Embed(
-        title=f"Role Info for {role.name}",
-        color=role.color if role.color.value else discord.Color.default()
-    )
-
-    embed.add_field(name="Role Name", value=role.name, inline=False)
-    embed.add_field(name="Created At", value=role.created_at.strftime("%B %d, %Y"), inline=False)
-    embed.add_field(name="Position", value=role.position, inline=False)
-    embed.add_field(name="Permissions", value=permissions_display, inline=False)
-
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# Alias to allow "role info" prefix command
-
-@bot.command(name="role")
-async def role_prefix(ctx, *, arg=None):
-    if arg and arg.lower().startswith("info"):
-        parts = arg.split(maxsplit=1)
-        if len(parts) < 2:
-            await ctx.send("Usage: `role info <role>`")
-            return
-        try:
-            role = await commands.RoleConverter().convert(ctx, parts[1])
-        except commands.BadArgument:
-            await ctx.send("Role not found.")
-            return
-        await ctx.invoke(bot.get_command("roleinfo"), role=role)
-    else:
-        await ctx.send("Usage: `role info <role>`")
 
 
 # ------------------------ Server Invite Slash Command ------------------------
@@ -884,41 +683,7 @@ async def server_invite_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ Server Invite Prefix Command ------------------------
 
-@bot.command(name="serverinvite")
-async def serverinvite_prefix(ctx):
-    guild = ctx.guild
-    invites = await guild.invites()
-    invite = invites[0] if invites else await ctx.channel.create_invite(max_age=0, reason="Requested by user")
-
-    if invite:
-        embed = discord.Embed(
-            title="🔗 Server Invite Link",
-            description=f"This is the invite to join the server:\n{invite.url}",
-            color=discord.Color.green()
-        )
-    else:
-        embed = discord.Embed(
-            title="{failed_emoji} Server Invite Error",
-            description="Unable to create or fetch an invite. Please check my permissions.",
-            color=discord.Color.red()
-        )
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# ------------------------ Alias: .server invite ------------------------
-
-@bot.command(name="server")
-async def server_prefix_handler(ctx, *, arg=None):
-    if arg and arg.lower() == "invite":
-        await ctx.invoke(bot.get_command("serverinvite"))
-    else:
-        await ctx.send("Usage: `server invite`")
 
 # ------------------------ Nickname Slash Command ------------------------
 
@@ -1395,47 +1160,6 @@ async def staff_feedback_slash(interaction: discord.Interaction, text: str, staf
     )
 
 
-# ------------------------ Staff Feedback Prefix Command ------------------------
-
-@bot.command(name="stafffeedback", aliases=["staff_feedback", "stafffeedback"])
-async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str = None):
-    required_role_id = 1343234687505530902  # Your staff role ID
-
-    if not staff or not text:
-        await ctx.send(f"{failed_emoji} Usage: `!stafffeedback @User <feedback>`", delete_after=10)
-        return
-
-    if ctx.author == staff:
-        await ctx.send(f"{failed_emoji} You cannot give feedback to yourself.", delete_after=10)
-        return
-
-    if required_role_id not in [role.id for role in staff.roles]:
-        await ctx.send(f"{failed_emoji} {staff.mention} does not have the required staff role.", delete_after=10)
-        return
-
-    if len(text.strip()) < 10:
-        await ctx.send(f"{failed_emoji} Feedback must be at least 10 characters.", delete_after=10)
-        return
-
-    staff_feedback_channel_id = 1343621982549311519
-    feedback_channel = ctx.guild.get_channel(staff_feedback_channel_id)
-
-    embed = discord.Embed(
-        title="{clipboard_emoji} Staff Feedback",
-        description=text,
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Feedback for", value=staff.mention, inline=True)
-    embed.add_field(name="Submitted by", value=ctx.author.mention, inline=True)
-    embed.add_field(name="User ID", value=ctx.author.id, inline=True)
-
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await feedback_channel.send(f"-# {ping_emoji} {staff.mention}", embed=embed)
-    await ctx.message.add_reaction(tick_emoji)
     
 # ------------------------ Events ------------------------
 
@@ -1505,46 +1229,7 @@ async def event_slash(interaction: discord.Interaction, event_name: str, event_d
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ Create Event Prefix Command ------------------------
 
-@bot.command(name="event")
-async def event_prefix(ctx, event_name: str, event_date: str, event_time: str, *, event_description: str):
-    # Role check
-    if event_role_id not in [role.id for role in ctx.author.roles]:
-        await ctx.send(f"{failed_emoji} You do not have permission to create events.", delete_after=10)
-        return
-
-    try:
-        event_datetime = datetime.strptime(f"{event_date} {event_time}", "%Y-%m-%d %H:%M")
-    except ValueError:
-        await ctx.send("Invalid date/time format. Please use 'YYYY-MM-DD' for the date and 'HH:MM' (24-hour) for the time.", delete_after=10)
-        return
-
-    event_data = {
-        "name": event_name,
-        "date": event_datetime.strftime("%Y-%m-%d"),
-        "time": event_datetime.strftime("%H:%M"),
-        "description": event_description,
-        "creator": ctx.author.name
-    }
-    events.append(event_data)
-    save_events()
-
-    embed = discord.Embed(
-        title=f"Event Created: {event_name}",
-        description=(
-            f"**Date:** {event_datetime.strftime('%Y-%m-%d')}\n"
-            f"**Time:** {event_datetime.strftime('%H:%M')}\n"
-            f"**Description:** {event_description}\n"
-            f"**Creator:** {ctx.author.name}"
-        ),
-        color=discord.Color.green()
-    )
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
 
 # ------------------------ View Events Slash Command ------------------------
 
@@ -1578,37 +1263,7 @@ async def events_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# ------------------------ View Events Prefix Command ------------------------
 
-@bot.command(name="events", aliases=["eventlist"])
-async def events_prefix(ctx):
-    if not events:
-        await ctx.send("There are no upcoming events at the moment.", delete_after=10)
-        return
-
-    embed = discord.Embed(
-        title="Upcoming Events",
-        description="Here are the upcoming events for the server:",
-        color=discord.Color.blue()
-    )
-
-    for event in events:
-        embed.add_field(
-            name=event["name"],
-            value=(
-                f"**Date:** {event['date']}\n"
-                f"**Time:** {event['time']}\n"
-                f"**Description:** {event['description']}\n"
-                f"**Creator:** {event['creator']}"
-            ),
-            inline=False
-        )
-
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
 
 # ------------------------ Shutdown Slash Command ------------------------
 
@@ -1638,34 +1293,7 @@ async def shutdown_slash(interaction: discord.Interaction):
     await bot.close()
 
 
-# ------------------------ Shutdown Prefix Command ------------------------
-
-@bot.command(name="shutdown")
-@commands.is_owner()
-async def shutdown_prefix(ctx):
-    embed_no_perm = discord.Embed(
-        description=f"{failed_emoji} You do not have permission to shut down the bot.",
-        color=discord.Color.red()
-    )
-    if ctx.guild and ctx.guild.icon:
-        embed_no_perm.set_thumbnail(url=ctx.guild.icon.url)
-    embed_no_perm.set_footer(text="SWAT Roleplay Community")
-
-    # Check if author is owner
-    if ctx.author.id != OWNER_ID:
-        await ctx.send(embed=embed_no_perm, delete_after=10)
-        return
-
-    embed = discord.Embed(
-        description=f"{failed_emoji} Shutting down the bot... Goodbye!",
-        color=discord.Color.red()
-    )
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-    await bot.close()
+#
 
 # ------------------------ Report Slash Command ------------------------
 
@@ -1711,46 +1339,7 @@ async def report_slash(interaction: discord.Interaction, user: discord.Member, r
 
         await interaction.response.send_message(embed=error_embed, ephemeral=True)
 
-# ------------------------ Report Prefix Command ------------------------
 
-@bot.command(name="report")
-async def report_prefix(ctx, user: discord.Member, *, reason: str):
-    embed = discord.Embed(
-        title="🚨 New User Report",
-        description=(
-            f"**Reporter:** {ctx.author.mention}\n"
-            f"**Reported User:** {user.mention}\n"
-            f"**Reason:** {reason}"
-        ),
-        color=discord.Color.red()
-    )
-    embed.set_footer(text=f"User ID: {user.id} | Reported from: #{ctx.channel.name}")
-    embed.timestamp = discord.utils.utcnow()
-
-    mod_channel = bot.get_channel(REPORT_CHANNEL_ID)
-    if mod_channel:
-        await mod_channel.send(embed=embed)
-        confirm_embed = discord.Embed(
-            title="Report Submitted",
-            description="Your report has been sent to the moderators. Thank you.",
-            color=discord.Color.green()
-        )
-        if ctx.guild and ctx.guild.icon:
-            confirm_embed.set_thumbnail(url=ctx.guild.icon.url)
-        confirm_embed.set_footer(text="SWAT Roleplay Community")
-
-        await ctx.send(embed=confirm_embed, delete_after=15)
-    else:
-        error_embed = discord.Embed(
-            title="Error",
-            description="Could not find the report channel. Please contact staff.",
-            color=discord.Color.red()
-        )
-        if ctx.guild and ctx.guild.icon:
-            error_embed.set_thumbnail(url=ctx.guild.icon.url)
-        error_embed.set_footer(text="SWAT Roleplay Community")
-
-        await ctx.send(embed=error_embed, delete_after=15)
 
 # ------------------------ DM Stuff ------------------------
 
