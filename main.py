@@ -1267,7 +1267,7 @@ async def staff_feedback_slash(interaction: discord.Interaction, text: str, staf
 
 # ------------------------ Staff Feedback Prefix Command ------------------------
 
-@bot.command(name="stafffeedback", aliases=["staff_feedback", "stafffeedback"])
+@bot.command(name="staff_feedback")
 async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str = None):
     required_role_id = 1343234687505530902  # Your staff role ID
 
