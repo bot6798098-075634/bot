@@ -36,6 +36,9 @@ from keep_alive import keep_alive
 import typing
 import atexit
 import copy
+import flask
+from flask import Flask
+import threading
 
 # ========================= Other =========================
 
@@ -44,6 +47,21 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+
+app = Flask("keep_alive")
+
+@app.route("/")
+def home():
+    return "Bot is alive!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+flask_thread = threading.Thread(target=run_flask)
+flask_thread.start()
+
 
 UTC = timezone.utc
 
