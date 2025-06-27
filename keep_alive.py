@@ -8,7 +8,7 @@ nest_asyncio.apply()
 
 app = Flask(__name__)
 
-API_KEY = os.getenv("PRC_API_KEY")
+API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise RuntimeError("PRC_API_KEY environment variable not set!")
 
