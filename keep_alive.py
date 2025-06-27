@@ -316,5 +316,5 @@ def keep_alive():
     thread = Thread(target=run)
     thread.start()
 
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+# if __name__ == "__main__":
+  #  app.run(debug=True, port=5000)
