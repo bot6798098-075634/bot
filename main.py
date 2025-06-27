@@ -146,6 +146,7 @@ session_manager_role_id = "1374839922976100472"
 staff_trainer_role_id = "1377794070440837160"
 afk_role_id = "1355829296085729454"
 event_role_id = "1346740470272757760"
+staff_help_role_id = "1370096425282830437" 
 
 # ========================= Slash commands and prefix commands =========================
 
@@ -1075,34 +1076,49 @@ async def errorlogs_prefix(ctx, *args):
 @bot.tree.command(name="suggestion", description="Submit a suggestion for the bot or server.")
 @app_commands.describe(suggestion="Your suggestion (10+ characters)")
 async def suggestion_slash(interaction: discord.Interaction, suggestion: str):
-    if not suggestion or len(suggestion) < 10:
-        await interaction.response.send_message(
-            f"{failed_emoji} Please provide a valid suggestion (at least 10 characters).",
-            ephemeral=True
+    def styled_embed(title: str, description: str, color: discord.Color):
+        embed = discord.Embed(title=title, description=description, color=color)
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        return embed
+
+    if not suggestion or len(suggestion.strip()) < 10:
+        error_embed = styled_embed(
+            f"{failed_emoji} Invalid Suggestion",
+            "Please provide a valid suggestion (at least 10 characters).",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=error_embed, ephemeral=True)
         return
 
-    suggestion_channel_id = 1343622169086918758  # Your suggestion log channel
+    suggestion_channel_id = 1343622169086918758
     suggestion_channel = interaction.guild.get_channel(suggestion_channel_id)
 
-    embed = discord.Embed(
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    suggestion_embed = discord.Embed(
         title="💡 New Suggestion",
         description=suggestion,
-        color=discord.Color.green()
+        color=discord.Color.blue()
     )
-    embed.add_field(name="Submitted by", value=interaction.user.mention, inline=True)
-    embed.add_field(name="User ID", value=interaction.user.id, inline=True)
+    suggestion_embed.add_field(name="Submitted by", value=interaction.user.mention, inline=True)
+    suggestion_embed.add_field(name="User ID", value=interaction.user.id, inline=True)
+    suggestion_embed.add_field(name="Submitted At", value=timestamp, inline=True)
 
     if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
+        suggestion_embed.set_thumbnail(url=interaction.guild.icon.url)
 
-    embed.set_footer(text="SWAT Roleplay Community")
+    suggestion_embed.set_footer(text="SWAT Roleplay Community")
 
-    await suggestion_channel.send(embed=embed)
-    await interaction.response.send_message(
-        f"{tick_emoji} Thank you for your suggestion! It has been submitted.",
-        ephemeral=True
+    await suggestion_channel.send(embed=suggestion_embed)
+
+    confirm_embed = styled_embed(
+        f"{tick_emoji} Suggestion Submitted",
+        "Thank you for your suggestion! It has been submitted.",
+        discord.Color.blue()
     )
+    await interaction.response.send_message(embed=confirm_embed, ephemeral=True)
 
 # ------------------------ Suggestion Prefix Command ------------------------
 
@@ -1135,32 +1151,46 @@ async def suggestion_prefix(ctx, *, suggestion: str = None):
 
 @bot.tree.command(name="staff_suggestion", description="Submit a staff suggestion for the bot or server.")
 @app_commands.describe(staff_suggestion="Your suggestion (10+ characters)")
-@app_commands.checks.has_role(1343234687505530902)  # Use staff_role_id here
+@app_commands.checks.has_role(int(staff_role_id))  # Ensure staff_role_id is int or cast it
 async def staff_suggestion_slash(interaction: discord.Interaction, staff_suggestion: str):
+    def styled_embed(title: str, description: str, color: discord.Color):
+        embed = discord.Embed(title=title, description=description, color=color)
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        return embed
+
     if len(staff_suggestion.strip()) < 10:
-        await interaction.response.send_message(
-            f"{failed_emoji} Please provide a valid suggestion (at least 10 characters).",
-            ephemeral=True
+        error_embed = styled_embed(
+            f"{failed_emoji} Invalid Suggestion",
+            "Please provide a valid suggestion (at least 10 characters).",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=error_embed, ephemeral=True)
         return
 
-    staff_suggestion_channel_id = 1373704702977376297  # Update this to your channel
+    staff_suggestion_channel_id = 1373704702977376297
     suggestion_channel = interaction.guild.get_channel(staff_suggestion_channel_id)
 
     if not suggestion_channel:
-        await interaction.response.send_message(
-            f"{failed_emoji} Suggestion channel not found. Please contact an admin.",
-            ephemeral=True
+        error_embed = styled_embed(
+            f"{failed_emoji} Channel Not Found",
+            "Suggestion channel not found. Please contact an admin.",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=error_embed, ephemeral=True)
         return
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     embed = discord.Embed(
         title="🛠️ New Staff Suggestion",
         description=staff_suggestion,
-        color=discord.Color.green()
+        color=discord.Color.blue()
     )
     embed.add_field(name="Submitted by", value=interaction.user.mention, inline=True)
     embed.add_field(name="User ID", value=str(interaction.user.id), inline=True)
+    embed.add_field(name="Submitted At", value=timestamp, inline=True)
 
     if interaction.guild and interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
@@ -1168,17 +1198,28 @@ async def staff_suggestion_slash(interaction: discord.Interaction, staff_suggest
     embed.set_footer(text="SWAT Roleplay Community")
 
     await suggestion_channel.send(embed=embed)
-    await interaction.response.send_message(f"{tick_emoji} Staff suggestion submitted.", ephemeral=True)
+
+    confirm_embed = styled_embed(
+        f"{tick_emoji} Suggestion Submitted",
+        "Thank you for your staff suggestion! It has been sent to the team.",
+        discord.Color.blue()
+    )
+    await interaction.response.send_message(embed=confirm_embed, ephemeral=True)
 
 # ------------------------ Slash Command error handler ------------------------
 
 @staff_suggestion_slash.error
 async def staff_suggestion_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.errors.MissingRole):
-        await interaction.response.send_message(
-            f"{failed_emoji} You do not have permission to use this command.",
-            ephemeral=True
+        embed = discord.Embed(
+            title=f"{failed_emoji} Permission Denied",
+            description="You do not have permission to use this command.",
+            color=discord.Color.red()
         )
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ------------------------ Staff Suggestion Prefix Command ------------------------
 
@@ -1223,59 +1264,74 @@ async def staff_suggestion_prefix(ctx, *, suggestion: str = None):
 @bot.tree.command(name="staff_feedback", description="Submit feedback for a staff member.")
 @app_commands.describe(text="Your feedback (10+ characters)", staff="The staff member")
 async def staff_feedback_slash(interaction: discord.Interaction, text: str, staff: discord.Member):
-    required_role_id = 1343234687505530902  # Your staff role ID
+
+    def styled_embed(title: str, description: str, color: discord.Color):
+        embed = discord.Embed(title=title, description=description, color=color)
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        return embed
 
     if interaction.user == staff:
-        await interaction.response.send_message(
-            f"{failed_emoji} You cannot give feedback to yourself.",
-            ephemeral=True
+        embed = styled_embed(
+            f"{failed_emoji} Feedback Rejected",
+            "You cannot give feedback to yourself.",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    if required_role_id not in [role.id for role in staff.roles]:
-        await interaction.response.send_message(
-            f"{failed_emoji} {staff.mention} does not have the required staff role.",
-            ephemeral=True
+    if staff_role_id not in [role.id for role in staff.roles]:
+        embed = styled_embed(
+            f"{failed_emoji} Feedback Rejected",
+            f"{staff.mention} does not have the required staff role.",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     if not text or len(text.strip()) < 10:
-        await interaction.response.send_message(
-            f"{failed_emoji} Please provide valid feedback (at least 10 characters).",
-            ephemeral=True
+        embed = styled_embed(
+            f"{failed_emoji} Invalid Feedback",
+            "Please provide valid feedback (at least 10 characters).",
+            discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    staff_feedback_channel_id = 1343621982549311519  # Feedback channel
+    staff_feedback_channel_id = 1343621982549311519
     feedback_channel = interaction.guild.get_channel(staff_feedback_channel_id)
 
-    embed = discord.Embed(
-        title="{clipboard_emoji} Staff Feedback",
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    feedback_embed = discord.Embed(
+        title=f"{clipboard_emoji} Staff Feedback",
         description=text,
         color=discord.Color.blue()
     )
-    embed.add_field(name="Feedback for", value=staff.mention, inline=True)
-    embed.add_field(name="Submitted by", value=interaction.user.mention, inline=True)
-    embed.add_field(name="User ID", value=interaction.user.id, inline=True)
+    feedback_embed.add_field(name="Feedback for", value=staff.mention, inline=True)
+    feedback_embed.add_field(name="Submitted by", value=interaction.user.mention, inline=True)
+    feedback_embed.add_field(name="Submitted At", value=timestamp, inline=True)
 
     if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
+        feedback_embed.set_thumbnail(url=interaction.guild.icon.url)
 
-    embed.set_footer(text="SWAT Roleplay Community")
+    feedback_embed.set_footer(text="SWAT Roleplay Community")
 
-    await feedback_channel.send(f"-# {ping_emoji} {staff.mention}", embed=embed)
+    await feedback_channel.send(f"-# {ping_emoji} {staff.mention}", embed=feedback_embed)
 
-    await interaction.response.send_message(
-        f"{tick_emoji} Thank you for your feedback about {staff.mention}.",
-        ephemeral=True
+    confirm_embed = styled_embed(
+        f"{tick_emoji} Feedback Submitted",
+        f"Thank you for your feedback about {staff.mention}.",
+        discord.Color.green()
     )
+    await interaction.response.send_message(embed=confirm_embed, ephemeral=True)
 
 
 # ------------------------ Staff Feedback Prefix Command ------------------------
 
 @bot.command(name="stafffeedback", aliases=["staff_feedback"])
 async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str = None):
-    required_role_id = 1343234687505530902  # Your staff role ID
 
     if not staff or not text:
         await ctx.send(f"{failed_emoji} Usage: `!stafffeedback @User <feedback>`", delete_after=10)
@@ -1285,7 +1341,7 @@ async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str 
         await ctx.send(f"{failed_emoji} You cannot give feedback to yourself.", delete_after=10)
         return
 
-    if required_role_id not in [role.id for role in staff.roles]:
+    if staff_role_id not in [role.id for role in staff.roles]:
         await ctx.send(f"{failed_emoji} {staff.mention} does not have the required staff role.", delete_after=10)
         return
 
@@ -1297,13 +1353,13 @@ async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str 
     feedback_channel = ctx.guild.get_channel(staff_feedback_channel_id)
 
     embed = discord.Embed(
-        title="{clipboard_emoji} Staff Feedback",
+        title=f"{clipboard_emoji} Staff Feedback",
         description=text,
         color=discord.Color.blue()
     )
     embed.add_field(name="Feedback for", value=staff.mention, inline=True)
     embed.add_field(name="Submitted by", value=ctx.author.mention, inline=True)
-    embed.add_field(name="User ID", value=ctx.author.id, inline=True)
+    embed.add_field(name="Time", value=ctx.author.id, inline=True)
 
     if ctx.guild and ctx.guild.icon:
         embed.set_thumbnail(url=ctx.guild.icon.url)
@@ -1545,30 +1601,41 @@ async def shutdown_prefix(ctx):
 
 # ------------------------ Report Slash Command ------------------------
 
-REPORT_CHANNEL_ID = 1358405704393822288
+REPORT_CHANNEL_ID = 1343300143830798336
 
 @bot.tree.command(name="report", description="Report a user to the moderators")
 @app_commands.describe(user="The user you want to report", reason="The reason for the report")
 async def report_slash(interaction: discord.Interaction, user: discord.Member, reason: str):
+    # Timestamp for reporting
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # Create the report embed
     embed = discord.Embed(
         title="🚨 New User Report",
-        description=(
-            f"**Reporter:** {interaction.user.mention}\n"
-            f"**Reported User:** {user.mention}\n"
-            f"**Reason:** {reason}"
-        ),
         color=discord.Color.red()
     )
-    embed.set_footer(text=f"User ID: {user.id} | Reported from: #{interaction.channel.name}")
-    embed.timestamp = discord.utils.utcnow()
+    embed.add_field(name="Reporter", value=interaction.user.mention, inline=True)
+    embed.add_field(name="Reported User", value=user.mention, inline=True)
+    embed.add_field(name="Reason", value=reason, inline=False)
+    embed.add_field(name="Channel", value=f"#{interaction.channel.name}", inline=True)
+    embed.add_field(name="Time", value=timestamp, inline=True)
 
-    mod_channel = bot.get_channel(REPORT_CHANNEL_ID)
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    mod_channel = interaction.guild.get_channel(REPORT_CHANNEL_ID)
+
     if mod_channel:
-        await mod_channel.send(embed=embed)
+        # Ping staff help role and send embed
+        await mod_channel.send(f"<@&{staff_help_role_id}> New report received:", embed=embed)
+
+        # Confirm to user
         confirm_embed = discord.Embed(
-            title="Report Submitted",
-            description="Your report has been sent to the moderators. Thank you.",
-            color=discord.Color.green()
+            title=f"{tick_emoji} Report Submitted",
+            description="Your report has been sent to the staff team. Thank you for helping keep the server safe.",
+            color=discord.Color.blue()
         )
         if interaction.guild and interaction.guild.icon:
             confirm_embed.set_thumbnail(url=interaction.guild.icon.url)
@@ -1577,8 +1644,8 @@ async def report_slash(interaction: discord.Interaction, user: discord.Member, r
         await interaction.response.send_message(embed=confirm_embed, ephemeral=True)
     else:
         error_embed = discord.Embed(
-            title="Error",
-            description="Could not find the report channel. Please contact staff.",
+            title=f"{failed_emoji} Report Failed",
+            description="The report channel could not be found. Please contact staff manually.",
             color=discord.Color.red()
         )
         if interaction.guild and interaction.guild.icon:
@@ -2053,116 +2120,102 @@ async def send_embed(channel_id: int, embed: discord.Embed):
 
 # === HANDLE ERROR CODES ===
 def get_error_message(http_status: int, api_code: str = None) -> str:
-
     messages = {
-        0:    f"{error_emoji} **0 – Unknown Error**: Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
-        100:  f"{error_emoji} **100 – Continue**: The server has received the request headers, and the client should proceed.",
-        101:  f"{error_emoji} **101 – Switching Protocols**: Protocol switching in progress.",
-        200:  f"{error_emoji} **200 – OK**: The request was successful.",
-        201:  f"{error_emoji} **201 – Created**: The request has been fulfilled and a new resource was created.",
-        204:  f"{error_emoji} **204 – No Content**: The server successfully processed the request but returned no content.",
-        400:  f"{error_emoji} **400 – Bad Request**: Bad request.",
-        401:  f"{error_emoji} **401 – Unauthorized**: Authentication is required or has failed.",
-        403:  f"{error_emoji} **403 – Unauthorized**: Unauthorized access.",
-        404:  f"{error_emoji} **404 – Not Found**: The requested resource could not be found.",
-        405:  f"{error_emoji} **405 – Method Not Allowed**: The HTTP method is not allowed for this endpoint.",
+        0:    f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact PRC support if this continues.",
+        100:  f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
+        101:  f"{error_emoji} **101 – Switching Protocols**: The server is switching protocols.",
+        200:  f"{error_emoji} **200 – OK**: The request completed successfully.",
+        201:  f"{error_emoji} **201 – Created**: The request succeeded and a new resource was created.",
+        204:  f"{error_emoji} **204 – No Content**: Success, but no content returned.",
+        400:  f"{error_emoji} **400 – Bad Request**: The request was malformed or invalid.",
+        401:  f"{error_emoji} **401 – Unauthorized**: Missing or invalid authentication.",
+        403:  f"{error_emoji} **403 – Forbidden**: You do not have permission to access this resource.",
+        404:  f"{error_emoji} **404 – Not Found**: The requested resource does not exist.",
+        405:  f"{error_emoji} **405 – Method Not Allowed**: That method is not allowed on this endpoint.",
         408:  f"{error_emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
-        409:  f"{error_emoji} **409 – Conflict**: The request could not be processed because of a conflict.",
-        410:  f"{error_emoji} **410 – Gone**: The resource requested is no longer available.",
-        415:  f"{error_emoji} **415 – Unsupported Media Type**: The server does not support the media type.",
+        409:  f"{error_emoji} **409 – Conflict**: The request could not be completed due to a conflict.",
+        410:  f"{error_emoji} **410 – Gone**: The resource has been permanently removed.",
+        415:  f"{error_emoji} **415 – Unsupported Media Type**: The media type is not supported.",
         418:  f"{error_emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
-        422:  f"{error_emoji} **422 – No Players**: The private server has no players in it.",
-        429:  f"{error_emoji} **429 – Too Many Requests**: You are being rate limited.",
-        500:  f"{error_emoji} **500 – Internal Server Error**: Problem communicating with Roblox.",
-        501:  f"{error_emoji} **501 – Not Implemented**: The server does not recognize the request method.",
-        502:  f"{error_emoji} **502 – Bad Gateway**: The server received an invalid response from the upstream server.",
-        503:  f"{error_emoji} **503 – Service Unavailable**: The server is not ready to handle the request.",
-        504:  f"{error_emoji} **504 – Gateway Timeout**: The server did not get a response in time.",
-        1001: f"{error_emoji} **1001 – Communication Error**: An error occurred communicating with Roblox / the in-game private server.",
-        1002: f"{error_emoji} **1002 – System Error**: An internal system error occurred.",
-        2000: f"{error_emoji} **2000 – Missing Server Key**: You did not provide a server-key.",
-        2001: f"{error_emoji} **2001 – Bad Server Key Format**: You provided an incorrectly formatted server-key.",
-        2002: f"{error_emoji} **2002 – Invalid Server Key**: You provided an invalid (or expired) server-key.",
-        2003: f"{error_emoji} **2003 – Invalid Global API Key**: You provided an invalid global API key.",
-        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is currently banned from accessing the API.",
-        3001: f"{error_emoji} **3001 – Missing Command**: You did not provide a valid command in the request body.",
-        3002: f"{error_emoji} **3002 – Server Offline**: The server you are attempting to reach is currently offline (has no players).",
-        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited.",
-        4002: f"{error_emoji} **4002 – Command Restricted**: The command you are attempting to run is restricted.",
-        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you're trying to send is prohibited.",
-        9998: f"{error_emoji} **9998 – Resource Restricted**: The resource you are accessing is restricted.",
-        9999: f"{error_emoji} **9999 – Module Outdated**: The module running on the in-game server is out of date, please kick all and try again.",
+        422:  f"{error_emoji} **422 – No Players**: No players are currently in the private server.",
+        429:  f"{error_emoji} **429 – Too Many Requests**: You are being rate-limited. Slow down.",
+        500:  f"{error_emoji} **500 – Internal Server Error**: An internal server error occurred (possibly with Roblox).",
+        501:  f"{error_emoji} **501 – Not Implemented**: The server doesn't recognize this method.",
+        502:  f"{error_emoji} **502 – Bad Gateway**: Invalid response from an upstream server.",
+        503:  f"{error_emoji} **503 – Service Unavailable**: The server is overloaded or under maintenance.",
+        504:  f"{error_emoji} **504 – Gateway Timeout**: The upstream server did not respond in time.",
+        1001: f"{error_emoji} **1001 – Communication Error**: Failed to communicate with Roblox or the in-game server.",
+        1002: f"{error_emoji} **1002 – System Error**: A backend error occurred. Try again later.",
+        2000: f"{error_emoji} **2000 – Missing Server Key**: No server-key provided.",
+        2001: f"{error_emoji} **2001 – Bad Server Key Format**: Server-key format is invalid.",
+        2002: f"{error_emoji} **2002 – Invalid Server Key**: The server-key is incorrect or expired.",
+        2003: f"{error_emoji} **2003 – Invalid Global API Key**: The global API key is invalid.",
+        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is banned from using the API.",
+        3001: f"{error_emoji} **3001 – Missing Command**: No command was specified in the request body.",
+        3002: f"{error_emoji} **3002 – Server Offline**: The server is currently offline or empty.",
+        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited. Please wait and try again.",
+        4002: f"{error_emoji} **4002 – Command Restricted**: The command you’re trying to run is restricted.",
+        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you’re trying to send is not allowed.",
+        9998: f"{error_emoji} **9998 – Resource Restricted**: You are trying to access a restricted resource.",
+        9999: f"{error_emoji} **9999 – Module Outdated**: The in-game module is outdated. Please restart the server.",
     }
 
     base_message = messages.get(http_status, f"{error_emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
     if api_code:
-        base_message += f"\nAPI code: {api_code}"
+        base_message += f"\nAPI Code: `{api_code}`"
     return base_message
 
 # === PRC COMMAND ===
-@bot.tree.command(name="erlc_command", description="Run a server command like :h, :m, :mod")
+@erlc_group.command(name="command", description="Run a server command like :h, :m, :mod")
 @discord.app_commands.describe(command="The command to run (e.g. ':h Hello', ':m message', ':mod')")
 async def erlc_command(interaction: discord.Interaction, command: str):
     await interaction.response.defer()
 
     lowered = command.lower()
 
-    # Block ban/unban/kick commands
+    # Restrict dangerous commands
     if any(word in lowered for word in ["ban", "unban", "kick"]):
-        await interaction.followup.send("{failed_emoji} You are not allowed to run ban, unban, or kick commands.")
+        embed = discord.Embed(
+            title=f"{error_emoji} Command Blocked",
+            description="You are not allowed to use `ban`, `unban`, or `kick` commands.",
+            color=discord.Color.red()
+        )
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
-    # If command starts with ":log ", treat it as a log message to send in game
+    # Handle `:log` command
     if lowered.startswith(":log "):
         message_to_log = command[5:].strip()
         if not message_to_log:
-            await interaction.followup.send("{failed_emoji} You must provide a message after ':log'.")
+            embed = discord.Embed(
+                title=f"{error_emoji} Missing Log Message",
+                description="You must provide a message after `:log`.",
+                color=discord.Color.red()
+            )
+            if interaction.guild and interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+            embed.set_footer(text="SWAT Roleplay Community")
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         in_game_command = f":say [LOG] {message_to_log}"
 
-        embed = discord.Embed(
+        log_embed = discord.Embed(
             title="🛠 In-Game Log Message Sent",
-            color=discord.Color.green(),
+            color=discord.Color.blue(),
             timestamp=datetime.now(timezone.utc)
         )
-        embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
-        embed.add_field(name="Message", value=message_to_log, inline=False)
-        embed.set_footer(text="SWAT Roleplay Community")
-        await send_embed(COMMAND_LOG_CHANNEL_ID, embed)
+        log_embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
+        log_embed.add_field(name="Message", value=message_to_log, inline=False)
+        if interaction.guild and interaction.guild.icon:
+            log_embed.set_thumbnail(url=interaction.guild.icon.url)
+        log_embed.set_footer(text="SWAT Roleplay Community")
+        await send_embed(COMMAND_LOG_CHANNEL_ID, log_embed)
 
         payload = {"command": in_game_command}
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
-                    if resp.status != 200:
-                        try:
-                            data = await resp.json()
-                            api_code = data.get("code")
-                        except:
-                            api_code = None
-                        await interaction.followup.send(get_error_message(resp.status, api_code))
-                        return
-            except Exception as e:
-                await interaction.followup.send(f"{error_emoji} Exception occurred: {e}")
-                return
-
-        await interaction.followup.send(f"{tick_emoji} Log message sent in-game: {message_to_log}")
-        return
-
-    # Regular command flow for other commands
-    embed = discord.Embed(
-        title="🛠 Command Executed",
-        color=discord.Color.blurple(),
-        timestamp=datetime.now(timezone.utc)
-    )
-    embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
-    embed.add_field(name="Command", value=f"{command}", inline=False)
-    embed.set_footer(text="PRC Command Log")
-    await send_embed(COMMAND_LOG_CHANNEL_ID, embed)
-
-    payload = {"command": command}
-    async with aiohttp.ClientSession() as session:
         try:
             async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
                 if resp.status != 200:
@@ -2171,13 +2224,47 @@ async def erlc_command(interaction: discord.Interaction, command: str):
                         api_code = data.get("code")
                     except:
                         api_code = None
-                    await interaction.followup.send(get_error_message(resp.status, api_code))
+                    await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
                     return
         except Exception as e:
-            await interaction.followup.send(f"{error_emoji} Exception occurred: {e}")
+            await interaction.followup.send(
+                f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
             return
 
-    await interaction.followup.send(f"{tick_emoji} Command {command} sent successfully.")
+        await interaction.followup.send(
+            f"{tick_emoji} Log message sent in-game: `{message_to_log}`", ephemeral=True)
+        return
+
+    # General command execution
+    command_embed = discord.Embed(
+        title="🛠 Command Executed",
+        color=discord.Color.blurple(),
+        timestamp=datetime.now(timezone.utc)
+    )
+    command_embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
+    command_embed.add_field(name="Command", value=command, inline=False)
+    if interaction.guild and interaction.guild.icon:
+        command_embed.set_thumbnail(url=interaction.guild.icon.url)
+    command_embed.set_footer(text="SWAT Roleplay Community")
+    await send_embed(COMMAND_LOG_CHANNEL_ID, command_embed)
+
+    payload = {"command": command}
+    try:
+        async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
+            if resp.status != 200:
+                try:
+                    data = await resp.json()
+                    api_code = data.get("code")
+                except:
+                    api_code = None
+                await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
+                return
+    except Exception as e:
+        await interaction.followup.send(
+            f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
+        return
+
+    await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
 
 
 @tasks.loop(seconds=60)
