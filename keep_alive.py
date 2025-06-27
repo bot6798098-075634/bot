@@ -3,9 +3,10 @@ import time
 import asyncio
 import aiohttp
 from flask import (
-    Flask, render_template_string, request, redirect, url_for, session, abort, flash, make_response, jsonify
+    Flask, render_template_string, request, redirect, url_for, session, abort, flash
 )
 from requests_oauthlib import OAuth2Session
+from flask import make_response
 
 # Allow OAuth2 over HTTP for localhost development only
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -16,13 +17,13 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")  # Change for p
 # Discord OAuth2 credentials - replace or use env vars
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1310388306764369940")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "aoE_MyuJf8Jec-pS8tiz0lqU6delYe4S")
-DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://bot-ej2s.onrender.com/callback")
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:5000/callback")
 
 # OAuth2 scopes
 OAUTH2_SCOPE = ["identify", "guilds"]
 
 # Allowed staff Discord user IDs (ints)
-ALLOWED_STAFF_IDS = {1276264248095412387, 1338177398390132799, 1296842183344918570, 699197216933412896, 1276855258987106314, 1349385378766917643}
+ALLOWED_STAFF_IDS = {1276264248095412387, 1338177398390132799}
 
 # API key for ER:LC API
 API_KEY = os.getenv("API_KEY")
@@ -30,11 +31,6 @@ HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
 # In-memory announcements (replace with DB for production)
 announcements_store = []
-
-# In-memory current viewers tracking:
-# key = user_id (str), value = dict { "name": username#discrim, "last_seen": timestamp }
-current_viewers = {}
-VIEWER_TIMEOUT = 60  # seconds
 
 HTML = """
 <!DOCTYPE html>
@@ -118,13 +114,6 @@ form#announcement_form button:hover { background:#2c53b8;}
         </div>
     </div>
 
-    <div class="section" aria-label="Currently Viewing">
-        <h2>Currently Viewing</h2>
-        <ul class="list" id="viewers_list">
-            <li>Loading...</li>
-        </ul>
-    </div>
-
     <div class="section" aria-label="Announcements">
         <h2>Announcements / Alerts</h2>
         <ul class="list" id="announcements_list">
@@ -159,32 +148,6 @@ form#announcement_form button:hover { background:#2c53b8;}
 </div>
 
 <script>
-async function sendHeartbeat() {
-    try {
-        await fetch('/heartbeat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-    } catch (e) {
-        console.error('Heartbeat failed', e);
-    }
-}
-
-async function updateViewers(viewers) {
-    const viewersList = document.getElementById('viewers_list');
-    viewersList.innerHTML = '';
-    if (viewers.length === 0) {
-        viewersList.innerHTML = '<li>No viewers online</li>';
-    } else {
-        viewers.forEach(v => {
-            const li = document.createElement('li');
-            li.textContent = v;
-            viewersList.appendChild(li);
-        });
-    }
-}
-
 async function fetchData() {
     try {
         const response = await fetch('/data');
@@ -195,8 +158,6 @@ async function fetchData() {
         document.getElementById('staff_count').textContent = data.staff_in_game_count;
         document.getElementById('owner_status').textContent = data.owner_in_game ? "Yes" : "No";
         document.getElementById('latency_ms').textContent = data.latency_ms;
-
-        updateViewers(data.viewers);
 
         const announcementsList = document.getElementById('announcements_list');
         announcementsList.innerHTML = '';
@@ -251,7 +212,6 @@ async function fetchData() {
 }
 fetchData();
 setInterval(fetchData, 10000);
-setInterval(sendHeartbeat, 30000);  // send heartbeat every 30 seconds
 </script>
 {% endif %}
 </body>
@@ -376,6 +336,10 @@ def logout():
     session.clear()
     return redirect(url_for("index"))
 
+@app.route("/")
+def index():
+    return render_template_string(HTML)
+
 async def fetch_api(session, url):
     async with session.get(url, headers=HEADERS) as resp:
         if resp.status == 200:
@@ -384,11 +348,6 @@ async def fetch_api(session, url):
 
 @app.route("/data")
 def get_data():
-    # Remove expired viewers first
-    now = time.time()
-    expired_keys = [k for k,v in current_viewers.items() if now - v["last_seen"] > VIEWER_TIMEOUT]
-    for k in expired_keys:
-        del current_viewers[k]
     return asyncio.run(fetch_data())
 
 async def fetch_data():
@@ -407,7 +366,6 @@ async def fetch_data():
                 "command_logs": [],
                 "vehicles": [],
                 "latency_ms": -1,
-                "viewers": [],
             }
 
         players_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/players") or []
@@ -463,9 +421,6 @@ async def fetch_data():
             if pid_int == server_info.get("OwnerId"):
                 owner_in_game = True
 
-        # Format viewers for output (usernames)
-        viewers_list = [v["name"] for v in current_viewers.values()]
-
         return {
             "players_count": players_count,
             "queue_count": queue_count,
@@ -476,7 +431,6 @@ async def fetch_data():
             "command_logs": command_logs,
             "vehicles": vehicles,
             "latency_ms": latency_ms,
-            "viewers": viewers_list,
         }
 
 @app.route("/add_announcement", methods=["POST"])
@@ -488,18 +442,12 @@ def add_announcement():
         announcements_store.append(announcement)
         flash("Announcement added!")
     return redirect(url_for("index"))
+# -------
 
-@app.route("/heartbeat", methods=["POST"])
-def heartbeat():
-    if not session.get("discord_token") or "discord_user" not in session:
-        # No user logged in - no heartbeat tracking
-        return jsonify({"status": "unauthorized"}), 403
-    user = session["discord_user"]
-    user_id = str(user["id"])
-    username = f'{user["username"]}#{user["discriminator"]}'
-    current_viewers[user_id] = {"name": username, "last_seen": time.time()}
-    return jsonify({"status": "ok"})
 
 def keep_alive():
-    app.run(host="0.0.0.0", port=5000)
+    Thread(target=run, daemon=True).start()
 
+# Optional: uncomment if you're running this file standalone
+# if __name__ == "__main__":
+#     run()
