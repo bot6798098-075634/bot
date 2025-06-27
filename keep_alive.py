@@ -10,7 +10,191 @@ API_KEY = os.getenv("API_KEY")
 HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
 # Your full styled HTML
-HTML = """<html lang="en"><head>...your full HTML from above...</head></html>"""
+HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SWAT Roleplay Community - ER:LC Server Info</title>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+    body {
+        background: #1f1f2e;
+        color: #eee;
+        font-family: 'Roboto', sans-serif;
+        margin: 0;
+        padding: 0;
+    }
+    .container {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 25px;
+        background: #2c2c44;
+        border-radius: 15px;
+        box-shadow: 0 0 25px #F39C12AA;
+    }
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 15px;
+    }
+    .logo-container img {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        box-shadow: 0 0 15px #F39C12AA;
+        border: 3px solid #F39C12;
+        object-fit: cover;
+    }
+    h1 {
+        text-align: center;
+        margin-bottom: 30px;
+        font-weight: 700;
+        color: #F39C12;
+        text-shadow: 0 0 5px #F39C12;
+    }
+    .stats {
+        display: flex;
+        justify-content: space-around;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .stat-card {
+        background: #3a3a5c;
+        padding: 15px 25px;
+        border-radius: 12px;
+        text-align: center;
+        flex: 1 1 120px;
+        box-shadow: 0 0 15px #F39C12AA;
+        transition: background 0.3s ease;
+    }
+    .stat-card:hover {
+        background: #4a4a7c;
+    }
+    .stat-card h2 {
+        margin: 0 0 10px 0;
+        font-size: 22px;
+        color: #f5b041;
+    }
+    .stat-card p {
+        font-size: 18px;
+        margin: 0;
+    }
+    .players-section {
+        background: #3a3a5c;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 0 15px #F39C12AA;
+        max-height: 350px;
+        overflow-y: auto;
+    }
+    .players-section h2 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #f5b041;
+        text-align: center;
+        font-weight: 700;
+    }
+    ul.player-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    ul.player-list li {
+        padding: 8px 12px;
+        border-bottom: 1px solid #4a4a7c;
+        font-weight: 500;
+        font-size: 16px;
+        color: #ddd;
+    }
+    ul.player-list li:last-child {
+        border-bottom: none;
+    }
+    footer {
+        text-align: center;
+        padding: 15px 0;
+        color: #999;
+        font-size: 14px;
+        margin-top: 40px;
+        user-select: none;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="logo-container">
+        <img src="https://images-ext-1.discordapp.net/external/PiBV5Gc1y0XGSrS_xKZZTDTsFSHbYj7JNmZ7_30paYA/%3Fsize%3D1024/https/cdn.discordapp.com/icons/1343179590247645205/84d0898fb6fc8d1b07811e7b179629b4.png?format=webp&quality=lossless&width=625&height=625" alt="SWAT Roleplay Logo" />
+    </div>
+    <h1>SWAT Roleplay Community</h1>
+    <div class="stats">
+        <div class="stat-card">
+            <h2>Players In-Game</h2>
+            <p id="players_count">Loading...</p>
+        </div>
+        <div class="stat-card">
+            <h2>Queue Count</h2>
+            <p id="queue_count">Loading...</p>
+        </div>
+        <div class="stat-card">
+            <h2>Staff In-Game</h2>
+            <p id="staff_count">Loading...</p>
+        </div>
+        <div class="stat-card">
+            <h2>Owner In-Game</h2>
+            <p id="owner_status">Loading...</p>
+        </div>
+    </div>
+    <div class="players-section">
+        <h2>Players List</h2>
+        <ul class="player-list" id="players_list">
+            <li>Loading...</li>
+        </ul>
+    </div>
+</div>
+<footer>SWAT Roleplay Community</footer>
+
+<script>
+async function fetchData() {
+    try {
+        const response = await fetch('/data');
+        const data = await response.json();
+
+        document.getElementById('players_count').textContent = data.players_count;
+        document.getElementById('queue_count').textContent = data.queue_count;
+        document.getElementById('staff_count').textContent = data.staff_in_game_count;
+        document.getElementById('owner_status').textContent = data.owner_in_game ? "Yes" : "No";
+
+        const playersList = document.getElementById('players_list');
+        playersList.innerHTML = '';
+
+        if (data.players.length === 0) {
+            playersList.innerHTML = '<li>No players online</li>';
+        } else {
+            for (const p of data.players) {
+                const li = document.createElement('li');
+                li.textContent = p;
+                playersList.appendChild(li);
+            }
+        }
+    } catch (err) {
+        console.error('Error fetching data:', err);
+        document.getElementById('players_count').textContent = 'Error';
+        document.getElementById('queue_count').textContent = 'Error';
+        document.getElementById('staff_count').textContent = 'Error';
+        document.getElementById('owner_status').textContent = 'Error';
+        document.getElementById('players_list').innerHTML = '<li>Error loading players</li>';
+    }
+}
+
+// Initial fetch
+fetchData();
+
+// Refresh every 10 seconds
+setInterval(fetchData, 10000);
+</script>
+</body>
+</html>"""
 
 async def fetch_api(session, url):
     async with session.get(url, headers=HEADERS) as resp:
