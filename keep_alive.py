@@ -16,7 +16,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")  # Change for p
 # Discord OAuth2 credentials - replace or use env vars
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1310388306764369940")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "aoE_MyuJf8Jec-pS8tiz0lqU6delYe4S")
-DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:5000/callback")
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://bot-ej2s.onrender.com/callback")
 
 # OAuth2 scopes
 OAUTH2_SCOPE = ["identify", "guilds"]
