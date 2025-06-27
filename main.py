@@ -39,7 +39,6 @@ from dotenv import load_dotenv
 # ========================= Other =========================
 
 load_dotenv()
-keep_alive()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
