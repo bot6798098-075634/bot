@@ -34,9 +34,11 @@ from keep_alive import keep_alive
 import typing
 import atexit
 import copy
+from dotenv import load_dotenv
 
 # ========================= Other =========================
 
+load_dotenv()
 keep_alive()
 
 logging.basicConfig(level=logging.INFO)
@@ -3773,5 +3775,6 @@ async def send_command_detail(target, command_name):
 
 # ------------------------ End of Help Commands ------------------------
 
-load_events()
-bot.run((os.getenv("DISCORD_TOKEN")))
+if __name__ == "__main__":
+    load_events()
+    bot.run(os.getenv("DISCORD_TOKEN"))
