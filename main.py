@@ -7629,11 +7629,4 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     load_events()
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=5000)
-
-flask_thread = threading.Thread(target=run_flask)
-flask_thread.start()
-
 bot.run(os.getenv("DISCORD_TOKEN"))
