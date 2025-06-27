@@ -4292,7 +4292,7 @@ async def send_embed(channel_id: int, embed: discord.Embed):
     await channel.send(embed=embed)
 
 # === HANDLE ERROR CODES ===
-def get_error_message(http_status: int, api_code: str = None) -> str:
+def get_error_message(http_status: int, api_code: str = None) -> discord.Embed:
     messages = {
         0:    f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact PRC support if this continues.",
         100:  f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
@@ -4334,9 +4334,17 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
     }
 
     base_message = messages.get(http_status, f"{error_emoji} **{http_status} – Unknown Error**: An unexpected error occurred.")
+
+    embed = discord.Embed(
+        title=f"Error {http_status}",
+        description=base_message,
+        color=discord.Color.red()
+    )
     if api_code:
-        base_message += f"\nAPI Code: `{api_code}`"
-    return base_message
+        embed.add_field(name="API Code", value=f"`{api_code}`", inline=False)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    return embed
 
 # === PRC COMMAND ===
 @erlc_group.command(name="command", description="Run a server command like :h, :m, :mod")
