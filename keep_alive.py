@@ -231,4 +231,4 @@ async def fetch_data():
 
         players_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/players") or []
         queue_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/queue") or []
-        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff
+        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or []
