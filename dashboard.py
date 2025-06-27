@@ -3,12 +3,11 @@ import time
 import asyncio
 import aiohttp
 from flask import (
-    Flask, render_template_string, request, redirect, url_for, session, abort, flash
+    Flask, render_template_string, request, redirect, url_for, session, abort, flash, make_response
 )
 from requests_oauthlib import OAuth2Session
-from flask import make_response
 
-# Allow OAuth2 over HTTP for localhost development only
+# Allow OAuth2 over HTTP for localhost development only (not needed for HTTPS)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 app = Flask(__name__)
@@ -17,7 +16,8 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")  # Change for p
 # Discord OAuth2 credentials - replace or use env vars
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1310388306764369940")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "aoE_MyuJf8Jec-pS8tiz0lqU6delYe4S")
-DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:5000/callback")
+# Use Render URL for redirect URI
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://dashboard-fi4p.onrender.com/callback")
 
 # OAuth2 scopes
 OAUTH2_SCOPE = ["identify", "guilds"]
@@ -444,4 +444,6 @@ def add_announcement():
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # Use port from environment (Render sets PORT)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
