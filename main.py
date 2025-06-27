@@ -65,32 +65,32 @@ OWNER_ID = 1276264248095412387
 
 session: aiohttp.ClientSession | None = None
 
-# ========================= Groups =========================
+erlc_group = app_commands.Group(name="erlc", description="ERLC related commands")
+discord_group = app_commands.Group(name="discord", description="Discord-related commands")
+error_group = app_commands.Group(name="error", description="Error logs and diagnostics")
+server_group = app_commands.Group(name="server", description="Server-related commands")
+user_group = app_commands.Group(name="user", description="User tools and utilities")
+role_group = app_commands.Group(name="role", description="Role management commands")
+staff_group = app_commands.Group(name="staff", description="Staff utilities and tools")
 
-erlc_group = discord.app_commands.Group(name="erlc", description="ERLC related commands")
-discord_group = app_commands.Group(name="discord", description="ERLC related commands")
-error_group = app_commands.Group(name="error", description="ERLC related commands")
-server_group = app_commands.Group(name="servergroup", description="ERLC related commands")
-user_group =app_commands.Group(name="user", description="ERLC related commands")
-role_group = app_commands.Group(name="role", description="ERLC related commands")
-staff_group = app_commands.Group(name="staff", description="ERLC related commands")
+# Register groups once (DO NOT register them in on_ready)
+bot.tree.add_command(erlc_group)
+bot.tree.add_command(discord_group)
+bot.tree.add_command(error_group)
+bot.tree.add_command(server_group)
+bot.tree.add_command(user_group)
+bot.tree.add_command(role_group)
+bot.tree.add_command(staff_group)
 
-# ========================= Bot start event ========================= 
+# ========================= Bot on_ready =========================
 
 @bot.event
 async def on_ready():
-    # Add command groups before syncing
-    bot.tree.add_command(erlc_group)
-    bot.tree.add_command(discord_group)
-    bot.tree.add_command(error_group)
-    bot.tree.add_command(server_group)
-    bot.tree.add_command(user_group)
-    bot.tree.add_command(role_group)
-    bot.tree.add_command(staff_group)
-
-    # Sync commands
-    await bot.tree.sync()  # Global sync
-    await bot.tree.sync(guild=discord.Object(id=1343179590247645205))  # Guild sync
+    try:
+        await bot.tree.sync()
+        await bot.tree.sync(guild=discord.Object(id=1343179590247645205))  # Optional: Your specific guild ID
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
     bot.start_time = datetime.now(timezone.utc)
 
@@ -99,14 +99,17 @@ async def on_ready():
         session = aiohttp.ClientSession()
 
     # Start background tasks
-    join_leave_log_task.start()
-    kill_log_task.start()
-    process_joins_loop.start()
-    check_log_commands.start()
-    update_vc_status.start()
-    check_staff_livery.start()
+    try:
+        join_leave_log_task.start()
+        kill_log_task.start()
+        process_joins_loop.start()
+        check_log_commands.start()
+        update_vc_status.start()
+        check_staff_livery.start()
+    except Exception as e:
+        print(f"Error starting background tasks: {e}")
 
-    # Set presence to DND with a watching status
+    # Set bot presence
     await bot.change_presence(
         status=discord.Status.dnd,
         activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
