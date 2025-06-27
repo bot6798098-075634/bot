@@ -2196,7 +2196,6 @@ from datetime import datetime
 from threading import Thread
 from datetime import datetime, timezone
 from datetime import timezone
-from keep_alive import keep_alive
 import typing
 import atexit
 import copy
@@ -7627,13 +7626,4 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     load_events()
-
-from keep_alive import keep_alive
-
-if __name__ == "__main__":
-    # Optionally run Flask in a thread:
-    import threading
-    flask_thread = threading.Thread(target=keep_alive)
-    flask_thread.start()
-
     bot.run(os.getenv("DISCORD_TOKEN"))
