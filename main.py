@@ -39,7 +39,13 @@ from dotenv import load_dotenv
 # ========================= Other =========================
 
 load_dotenv()
-keep_alive()
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=5000)
+
+flask_thread = threading.Thread(target=run_flask)
+flask_thread.start()
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
