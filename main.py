@@ -4718,7 +4718,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         color=discord.Color.blue()
     )
     embed.add_field(
-        name="{clipboard_emoji} Basic Info",
+        name=f"{clipboard_emoji} Basic Info",
         value=(
             f"> **Join Code:** [{server['JoinKey']}](https://policeroleplay.community/join/{server['JoinKey']})\n"
             f"> **Players:** {server['CurrentPlayers']}/{server['MaxPlayers']}\n"
@@ -4727,7 +4727,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         inline=False
     )
     embed.add_field(
-        name="👮 Staff Info",
+        name=f"👮 Staff Info",
         value=(
             f"> **Moderators:** {len(mods)}\n"
             f"> **Administrators:** {len(admins)}\n"
@@ -4736,7 +4736,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         inline=False
     )
     embed.add_field(
-        name="{owner_emoji} Server Ownership",
+        name=f"{owner_emoji} Server Ownership",
         value=(
             f"> **Owner:** [{usernames[owner_id]}](https://roblox.com/users/{owner_id}/profile)\n"
             f"> **Co-Owners:** {', '.join([f'[{usernames[uid]}](https://roblox.com/users/{uid}/profile)' for uid in co_owner_ids]) or 'None'}"
