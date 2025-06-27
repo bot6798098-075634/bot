@@ -810,8 +810,7 @@ async def discord_invite_slash(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# Register the discord_group to your bot tree (somewhere in your setup)
-bot.tree.add_command(discord_group)
+
 
 
 # --------- Prefix command for !discord invite ---------
