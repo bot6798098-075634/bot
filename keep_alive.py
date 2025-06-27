@@ -11,9 +11,10 @@ app = Flask(__name__)
 
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
-    raise RuntimeError("API_KEY environment variable not set!")
-
-HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
+    print("ERROR: PRC_API_KEY environment variable not set!")
+    HEADERS = {}
+else:
+    HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
 HTML = """
 <!DOCTYPE html>
@@ -201,10 +202,19 @@ setInterval(fetchData, 10000);
 """
 
 async def fetch_api(session, url):
-    async with session.get(url, headers=HEADERS) as resp:
-        if resp.status == 200:
-            return await resp.json()
+    try:
+        async with session.get(url, headers=HEADERS) as resp:
+            print(f"Request to {url} returned status {resp.status}")
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                text = await resp.text()
+                print(f"Error response body: {text}")
+                return None
+    except Exception as e:
+        print(f"Exception during fetch_api({url}): {e}")
         return None
+
 
 @app.route("/")
 def index():
