@@ -127,11 +127,11 @@ tick_emoji = "<:tick:1383796116763709532>"
 error_emoji = "<:error:1383587321294884975>"
 ping_emoji = "<:ping:1381073968873607229>"
 logo_emoji = "<:logo:1322987575375429662>"
-pong_emoji = "<pong:1387845465315348480:>"
-failed_emoji = "<failed:1387853598733369435:>"
-note_emoji = "<note:1387865341773873302:>"
-clipboard_emoji = "<clipboard:1387890654868410408:>"
-owner_emoji = "<owner:1387900933006164160:>" 
+pong_emoji = "<:pong:1387845465315348480>"
+failed_emoji = "<:failed:1387853598733369435>"
+note_emoji = "<note:1387865341773873302>"
+clipboard_emoji = "<:clipboard:1387890654868410408>"
+owner_emoji = "<:owner:1387900933006164160>" 
 
 # ========================= Role IDs =========================
 
