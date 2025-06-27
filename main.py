@@ -30,7 +30,7 @@ from datetime import datetime
 from threading import Thread
 from datetime import datetime, timezone
 from datetime import timezone
-from keep_alive import keep_alive
+import keep_alive
 import typing
 import atexit
 import copy
