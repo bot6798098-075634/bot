@@ -7628,14 +7628,12 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
 
-import threading
-import keep_alive
-
-def run_flask():
-    keep_alive.app.run(host="0.0.0.0", port=5000)
+from keep_alive import keep_alive
 
 if __name__ == "__main__":
-    flask_thread = threading.Thread(target=run_flask)
+    # Optionally run Flask in a thread:
+    import threading
+    flask_thread = threading.Thread(target=keep_alive)
     flask_thread.start()
 
     bot.run(os.getenv("DISCORD_TOKEN"))
