@@ -9,7 +9,6 @@ app = Flask(__name__)
 API_KEY = os.getenv("API_KEY")
 HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
-# Your full styled HTML
 HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,8 +18,8 @@ HTML = """<!DOCTYPE html>
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
     body {
-        background: #1f1f2e;
-        color: #eee;
+        background: #0d1117;
+        color: #e6f1ff;
         font-family: 'Roboto', sans-serif;
         margin: 0;
         padding: 0;
@@ -29,9 +28,9 @@ HTML = """<!DOCTYPE html>
         max-width: 900px;
         margin: 40px auto;
         padding: 25px;
-        background: #2c2c44;
+        background: #161b22;
         border-radius: 15px;
-        box-shadow: 0 0 25px #F39C12AA;
+        box-shadow: 0 0 25px #3498db88;
     }
     .logo-container {
         display: flex;
@@ -42,16 +41,16 @@ HTML = """<!DOCTYPE html>
         width: 120px;
         height: 120px;
         border-radius: 50%;
-        box-shadow: 0 0 15px #F39C12AA;
-        border: 3px solid #F39C12;
+        box-shadow: 0 0 15px #3498db88;
+        border: 3px solid #3498db;
         object-fit: cover;
     }
     h1 {
         text-align: center;
         margin-bottom: 30px;
         font-weight: 700;
-        color: #F39C12;
-        text-shadow: 0 0 5px #F39C12;
+        color: #3498db;
+        text-shadow: 0 0 5px #3498db;
     }
     .stats {
         display: flex;
@@ -61,38 +60,38 @@ HTML = """<!DOCTYPE html>
         gap: 15px;
     }
     .stat-card {
-        background: #3a3a5c;
+        background: #1f2a38;
         padding: 15px 25px;
         border-radius: 12px;
         text-align: center;
         flex: 1 1 120px;
-        box-shadow: 0 0 15px #F39C12AA;
+        box-shadow: 0 0 15px #2980b988;
         transition: background 0.3s ease;
     }
     .stat-card:hover {
-        background: #4a4a7c;
+        background: #223344;
     }
     .stat-card h2 {
         margin: 0 0 10px 0;
         font-size: 22px;
-        color: #f5b041;
+        color: #5dade2;
     }
     .stat-card p {
         font-size: 18px;
         margin: 0;
     }
     .players-section {
-        background: #3a3a5c;
+        background: #1f2a38;
         border-radius: 12px;
         padding: 20px;
-        box-shadow: 0 0 15px #F39C12AA;
+        box-shadow: 0 0 15px #2980b988;
         max-height: 350px;
         overflow-y: auto;
     }
     .players-section h2 {
         margin-top: 0;
         margin-bottom: 15px;
-        color: #f5b041;
+        color: #5dade2;
         text-align: center;
         font-weight: 700;
     }
@@ -103,10 +102,10 @@ HTML = """<!DOCTYPE html>
     }
     ul.player-list li {
         padding: 8px 12px;
-        border-bottom: 1px solid #4a4a7c;
+        border-bottom: 1px solid #34495e;
         font-weight: 500;
         font-size: 16px;
-        color: #ddd;
+        color: #d6eaf8;
     }
     ul.player-list li:last-child {
         border-bottom: none;
@@ -114,7 +113,7 @@ HTML = """<!DOCTYPE html>
     footer {
         text-align: center;
         padding: 15px 0;
-        color: #999;
+        color: #7f8c8d;
         font-size: 14px;
         margin-top: 40px;
         user-select: none;
@@ -195,6 +194,7 @@ setInterval(fetchData, 10000);
 </script>
 </body>
 </html>"""
+
 
 async def fetch_api(session, url):
     async with session.get(url, headers=HEADERS) as resp:
