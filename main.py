@@ -737,8 +737,7 @@ async def roleinfo_slash(interaction: discord.Interaction, role: discord.Role):
 
     await interaction.response.send_message(embed=embed)
 
-# Register the role group with the tree:
-tree.add_command(role_group)
+
 
 # ------------------------ Role Info Prefix Command ------------------------
 
