@@ -15,6 +15,7 @@ HTML = """<!DOCTYPE html>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SWAT Roleplay Community - ER:LC Server Info</title>
+<link rel="icon" href="https://cdn.discordapp.com/icons/1343179590247645205/84d0898fb6fc8d1b07811e7b179629b4.png?size=64" type="image/png">
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
     body {
