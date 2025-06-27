@@ -37,6 +37,13 @@ from dotenv import load_dotenv
 
 # ========================= Other =========================
 
+
+from keep_alive import keep_alive
+
+if __name__ == "__main__":
+    keep_alive()  # starts the Flask server to keep the app alive
+    # your other bot or app code here
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
