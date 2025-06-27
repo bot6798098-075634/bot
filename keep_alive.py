@@ -1,102 +1,80 @@
-from flask import Flask, render_template_string, request
+import os
+import asyncio
+import aiohttp
+from flask import Flask, render_template_string, jsonify
 from threading import Thread
-import datetime
-import logging
-import traceback
 
-# === Logging Setup ===
-logger = logging.getLogger("KeepAlive")
-logger.setLevel(logging.INFO)
-
-# Log to console
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s"))
-logger.addHandler(console_handler)
-
-# Log to file
-file_handler = logging.FileHandler("keep_alive.log", encoding="utf-8")
-file_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s - %(message)s"))
-logger.addHandler(file_handler)
-
-# === Flask App ===
 app = Flask(__name__)
 
-# === HTML Status Page ===
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Bot Status</title>
-    <style>
-        body {
-            font-family: Consolas, monospace;
-            background-color: #0e0e0e;
-            color: #00ff00;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-        }
-        p {
-            font-size: 1.25rem;
-            color: #ccc;
-        }
-        .small {
-            font-size: 0.9rem;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    <h1>✅ Bot is Running</h1>
-    <p>Last checked: {{ timestamp }}</p>
-    <p class="small">IP: {{ ip }}</p>
-</body>
-</html>
-"""
+API_KEY = os.getenv("API_KEY")
+HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
-# === Routes ===
+# Your full styled HTML
+HTML = """<html lang="en"><head>...your full HTML from above...</head></html>"""
+
+async def fetch_api(session, url):
+    async with session.get(url, headers=HEADERS) as resp:
+        if resp.status == 200:
+            return await resp.json()
+        return None
 
 @app.route("/")
-def home():
-    now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"Ping received from {ip}")
-    return render_template_string(HTML_TEMPLATE, timestamp=now, ip=ip)
+def index():
+    return render_template_string(HTML)
 
-@app.errorhandler(404)
-def not_found(e):
-    logger.warning(f"404 Not Found: {request.path}")
-    return "404 - Not Found", 404
+@app.route("/data")
+def data():
+    return asyncio.run(fetch_data())
 
-@app.errorhandler(500)
-def internal_error(e):
-    logger.error("500 Internal Server Error:\n" + traceback.format_exc())
-    return "500 - Internal Server Error", 500
+async def fetch_data():
+    async with aiohttp.ClientSession() as session:
+        server_info = await fetch_api(session, "https://api.policeroleplay.community/v1/server") or {}
+        players_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/players") or []
+        queue_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/queue") or []
+        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or {}
 
-@app.errorhandler(Exception)
-def unhandled_exception(e):
-    logger.error("Unhandled Exception:\n" + traceback.format_exc())
-    return "An error occurred.", 500
+        players_count = len(players_data)
+        queue_count = len(queue_data)
 
-# === Run Thread ===
+        staff_ids = set()
+        for group in ("Admins", "Mods"):
+            for k in staff_data.get(group, {}):
+                try: staff_ids.add(int(k))
+                except: continue
+        staff_ids.update(map(int, staff_data.get("CoOwners", [])))
+
+        staff_in_game_count = 0
+        owner_in_game = False
+        players_list = []
+
+        for player in players_data:
+            pname_id = player.get("Player", "")
+            if ":" not in pname_id:
+                continue
+            pname, pid = pname_id.split(":")
+            try: pid_int = int(pid)
+            except: continue
+
+            players_list.append(pname)
+            if pid_int in staff_ids:
+                staff_in_game_count += 1
+            if pid_int == server_info.get("OwnerId"):
+                owner_in_game = True
+
+        return {
+            "players_count": players_count,
+            "queue_count": queue_count,
+            "staff_in_game_count": staff_in_game_count,
+            "owner_in_game": owner_in_game,
+            "players": players_list
+        }
 
 def run():
-    try:
-        logger.info("Keep-alive Flask server is starting on port 8080...")
-        app.run(host="0.0.0.0", port=8080)
-    except Exception as e:
-        logger.critical("Critical error in Flask server:\n" + traceback.format_exc())
+    app.run(host="0.0.0.0", port=8080, debug=False)
 
 def keep_alive():
-    thread = Thread(target=run)
-    thread.daemon = True
-    thread.start()
-    logger.info("Keep-alive background thread launched.")
+    Thread(target=run, daemon=True).start()
+
+# Optional: uncomment if you're running this file standalone
+# if __name__ == "__main__":
+#     run()
