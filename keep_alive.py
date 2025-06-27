@@ -500,5 +500,6 @@ def heartbeat():
     current_viewers[user_id] = {"name": username, "last_seen": time.time()}
     return jsonify({"status": "ok"})
 
-# if __name__ == "__main__":
-  #  app.run(debug=True, port=5000)
+def keep_alive():
+    app.run(host="0.0.0.0", port=5000)
+
