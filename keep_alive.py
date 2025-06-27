@@ -442,12 +442,6 @@ def add_announcement():
         announcements_store.append(announcement)
         flash("Announcement added!")
     return redirect(url_for("index"))
-# -------
 
-
-def keep_alive():
-    Thread(target=run, daemon=True).start()
-
-# Optional: uncomment if you're running this file standalone
-# if __name__ == "__main__":
-#     run()
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
