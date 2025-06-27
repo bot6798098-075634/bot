@@ -73,6 +73,7 @@ error_group = app_commands.Group(name="error", description="ERLC related command
 server_group = app_commands.Group(name="servergroup", description="ERLC related commands")
 user_group =app_commands.Group(name="user", description="ERLC related commands")
 role_group = app_commands.Group(name="role", description="ERLC related commands")
+staff_group = app_commands.Group(name="staff", description="ERLC related commands")
 
 # ========================= Bot start event ========================= 
 
@@ -85,6 +86,7 @@ async def on_ready():
     bot.tree.add_command(server_group)
     bot.tree.add_command(user_group)
     bot.tree.add_command(role_group)
+    bot.tree.add_command(staff_group)
 
     # Sync commands
     await bot.tree.sync()  # Global sync
@@ -775,6 +777,8 @@ async def role_prefix(ctx, *, arg=None):
         await ctx.send("Usage: `role info <role>`")
 
 
+# ------------------------ Server Invite Slash Command ------------------------
+
 # Slash command /discord invite
 @discord_group.command(name="invite", description="Get the server's invite link")
 async def discord_invite_slash(interaction: discord.Interaction):
@@ -791,7 +795,7 @@ async def discord_invite_slash(interaction: discord.Interaction):
         )
     else:
         embed = discord.Embed(
-            title="❌ Server Invite Error",
+            title="{failed_emoji} Server Invite Error",
             description="Unable to create or fetch an invite. Please check my permissions.",
             color=discord.Color.red()
         )
@@ -831,7 +835,7 @@ async def invite_prefix(ctx):
         )
     else:
         embed = discord.Embed(
-            title="❌ Server Invite Error",
+            title="{failed_emoji} Server Invite Error",
             description="Unable to create or fetch an invite. Please check my permissions.",
             color=discord.Color.red()
         )
@@ -847,7 +851,6 @@ async def invite_prefix(ctx):
 @bot.command(name="discordinvite")
 async def discordinvite_prefix(ctx):
     await ctx.invoke(bot.get_command("invite"))
-
 
 # ------------------------ Nickname Slash Command ------------------------
 
@@ -1267,7 +1270,7 @@ async def staff_feedback_slash(interaction: discord.Interaction, text: str, staf
 
 # ------------------------ Staff Feedback Prefix Command ------------------------
 
-@bot.command(name="staff_feedback")
+@bot.command(name="stafffeedback", aliases=["staff_feedback"])
 async def staff_feedback_prefix(ctx, staff: discord.Member = None, *, text: str = None):
     required_role_id = 1343234687505530902  # Your staff role ID
 
@@ -1933,6 +1936,45 @@ async def dm_prefix(ctx):
         await ctx.send("📬 I sent you a DM with the editable embed and message!", delete_after=15)
     except discord.Forbidden:
         await ctx.send("{failed_emoji} I couldn't DM you. Please check your privacy settings.", delete_after=15)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
