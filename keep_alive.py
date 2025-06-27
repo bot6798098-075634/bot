@@ -1,8 +1,9 @@
 import os
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, jsonify
 import aiohttp
 import asyncio
 import nest_asyncio
+from threading import Thread
 
 nest_asyncio.apply()
 
@@ -10,7 +11,7 @@ app = Flask(__name__)
 
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
-    raise RuntimeError("PRC_API_KEY environment variable not set!")
+    raise RuntimeError("API_KEY environment variable not set!")
 
 HEADERS = {"server-key": API_KEY, "Accept": "application/json"}
 
@@ -192,10 +193,7 @@ async function fetchData() {
     }
 }
 
-// Initial fetch
 fetchData();
-
-// Refresh every 10 seconds
 setInterval(fetchData, 10000);
 </script>
 </body>
@@ -206,8 +204,7 @@ async def fetch_api(session, url):
     async with session.get(url, headers=HEADERS) as resp:
         if resp.status == 200:
             return await resp.json()
-        else:
-            return None
+        return None
 
 @app.route("/")
 def index():
@@ -215,7 +212,7 @@ def index():
 
 @app.route("/data")
 def get_data():
-    return asyncio.run(fetch_data())
+    return jsonify(asyncio.run(fetch_data()))
 
 async def fetch_data():
     async with aiohttp.ClientSession() as session:
@@ -231,4 +228,60 @@ async def fetch_data():
 
         players_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/players") or []
         queue_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/queue") or []
-        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or []
+        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or {}
+
+        admins = staff_data.get("Admins", {})
+        mods = staff_data.get("Mods", {})
+        coowners = staff_data.get("CoOwners", [])
+
+        staff_ids = set()
+        for k in admins.keys():
+            try:
+                staff_ids.add(int(k))
+            except:
+                pass
+        for k in mods.keys():
+            try:
+                staff_ids.add(int(k))
+            except:
+                pass
+        for co in coowners:
+            try:
+                staff_ids.add(int(co))
+            except:
+                pass
+
+        staff_in_game_count = 0
+        owner_in_game = False
+        players_list = []
+
+        for player in players_data:
+            pname_id = player.get("Player", "")
+            if ":" not in pname_id:
+                continue
+            pname, pid = pname_id.split(":")
+            try:
+                pid_int = int(pid)
+            except:
+                continue
+
+            players_list.append(pname)
+
+            if pid_int in staff_ids:
+                staff_in_game_count += 1
+            if pid_int == server_info.get("OwnerId"):
+                owner_in_game = True
+
+        return {
+            "players_count": len(players_data),
+            "queue_count": len(queue_data),
+            "staff_in_game_count": staff_in_game_count,
+            "owner_in_game": owner_in_game,
+            "players": players_list
+        }
+
+def keep_alive():
+    def run():
+        app.run(host="0.0.0.0", port=8080)
+    thread = Thread(target=run)
+    thread.start()
