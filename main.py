@@ -19,7 +19,6 @@ from discord import app_commands
 from discord.ui import View, Button, Select
 from discord.utils import get
 from discord.raw_models import RawReactionActionEvent
-from dotenv import load_dotenv
 import aiohttp
 from datetime import UTC
 from collections import defaultdict, deque
@@ -27,6 +26,7 @@ from discord.ui import Button, View
 from discord import app_commands, ui
 import re, io
 import datetime
+from datetime import datetime
 from threading import Thread
 from datetime import datetime, timezone
 from datetime import timezone
@@ -34,12 +34,12 @@ from keep_alive import keep_alive
 import typing
 import atexit
 import copy
-
+from dotenv import load_dotenv
 
 # ========================= Other =========================
 
 load_dotenv()
-keep_alive()  # Starts the web server
+keep_alive()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -2204,7 +2204,7 @@ import atexit
 import copy
 from dotenv import load_dotenv
 import threading
-# from webserver import app as flask_app
+from webserver import app as flask_app
 
 # ========================= Other =========================
 
