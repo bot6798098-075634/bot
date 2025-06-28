@@ -57,8 +57,8 @@ app = Flask(__name__)
 def home():
     return render_template_string(HTML)
 
-def keep_alive():
-    def run():
-        app.run(host='0.0.0.0', port=8080)
-    t = Thread(target=run)
-    t.start()
+# def keep_alive():
+#    def run():
+ #      app.run(host='0.0.0.0', port=8080)
+#    t = Thread(target=run)
+#    t.start()
