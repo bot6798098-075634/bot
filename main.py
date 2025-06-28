@@ -30,7 +30,6 @@ from datetime import datetime
 from threading import Thread
 from datetime import datetime, timezone
 from datetime import timezone
-from keep_alive import keep_alive
 import typing
 import atexit
 import copy
@@ -38,8 +37,14 @@ from dotenv import load_dotenv
 
 # ========================= Other =========================
 
+
+from keep_alive import keep_alive
+
+if __name__ == "__main__":
+    keep_alive()  # starts the Flask server to keep the app alive
+    # your other bot or app code here
+
 load_dotenv()
-keep_alive()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -2166,6 +2171,105 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
     return base_message
 
 # === PRC COMMAND ===
+@erlc_group.command(name="command", description="Run a server command like :h, :m, :mod")
+@discord.app_commands.describe(command="The command to run (e.g. ':h Hello', ':m message', ':mod')")
+async def erlc_command(interaction: discord.Interaction, command: str):
+    await interaction.response.defer()
+
+    lowered = command.lower()
+
+    # Restrict dangerous commands
+    if any(word in lowered for word in ["ban", "unban", "kick"]):
+        embed = discord.Embed(
+            title=f"{error_emoji} Command Blocked",
+            description="You are not allowed to use `ban`, `unban`, or `kick` commands.",
+            color=discord.Color.red()
+        )
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        embed.set_footer(text="SWAT Roleplay Community")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    # Handle `:log` command
+    if lowered.startswith(":log "):
+        message_to_log = command[5:].strip()
+        if not message_to_log:
+            embed = discord.Embed(
+                title=f"{error_emoji} Missing Log Message",
+                description="You must provide a message after `:log`.",
+                color=discord.Color.red()
+            )
+            if interaction.guild and interaction.guild.icon:
+                embed.set_thumbnail(url=interaction.guild.icon.url)
+            embed.set_footer(text="SWAT Roleplay Community")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        in_game_command = f":say [LOG] {message_to_log}"
+
+        log_embed = discord.Embed(
+            title="🛠 In-Game Log Message Sent",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        log_embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
+        log_embed.add_field(name="Message", value=message_to_log, inline=False)
+        if interaction.guild and interaction.guild.icon:
+            log_embed.set_thumbnail(url=interaction.guild.icon.url)
+        log_embed.set_footer(text="SWAT Roleplay Community")
+        await send_embed(COMMAND_LOG_CHANNEL_ID, log_embed)
+
+        payload = {"command": in_game_command}
+        try:
+            async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
+                if resp.status != 200:
+                    try:
+                        data = await resp.json()
+                        api_code = data.get("code")
+                    except:
+                        api_code = None
+                    await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
+                    return
+        except Exception as e:
+            await interaction.followup.send(
+                f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"{tick_emoji} Log message sent in-game: `{message_to_log}`", ephemeral=True)
+        return
+
+    # General command execution
+    command_embed = discord.Embed(
+        title="🛠 Command Executed",
+        color=discord.Color.blurple(),
+        timestamp=datetime.now(timezone.utc)
+    )
+    command_embed.add_field(name="User", value=f"{interaction.user} (ID: {interaction.user.id})", inline=False)
+    command_embed.add_field(name="Command", value=command, inline=False)
+    if interaction.guild and interaction.guild.icon:
+        command_embed.set_thumbnail(url=interaction.guild.icon.url)
+    command_embed.set_footer(text="SWAT Roleplay Community")
+    await send_embed(COMMAND_LOG_CHANNEL_ID, command_embed)
+
+    payload = {"command": command}
+    try:
+        async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
+            if resp.status != 200:
+                try:
+                    data = await resp.json()
+                    api_code = data.get("code")
+                except:
+                    api_code = None
+                await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
+                return
+    except Exception as e:
+        await interaction.followup.send(
+            f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
+        return
+
+    await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
 
 
 @tasks.loop(seconds=60)
@@ -3761,5 +3865,6 @@ async def send_command_detail(target, command_name):
 
 # ------------------------ End of Help Commands ------------------------
 
-
-bot.run(os.getenv("DISCORD_TOKEN"))
+if __name__ == "__main__":
+    load_events()
+    bot.run(os.getenv("DISCORD_TOKEN"))
