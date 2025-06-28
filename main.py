@@ -7627,6 +7627,5 @@ async def send_command_detail(target, command_name):
 
 # ------------------------ End of Help Commands ------------------------
 
-if __name__ == "__main__":
-    load_events()
+
 bot.run(os.getenv("DISCORD_TOKEN"))
