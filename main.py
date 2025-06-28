@@ -78,7 +78,6 @@ error_group = app_commands.Group(name="error", description="Error logs and diagn
 server_group = app_commands.Group(name="server", description="Server-related commands")
 user_group = app_commands.Group(name="user", description="User tools and utilities")
 role_group = app_commands.Group(name="role", description="Role management commands")
-staff_group = app_commands.Group(name="staff", description="Staff utilities and tools")
 
 # Register groups once (DO NOT register them in on_ready)
 bot.tree.add_command(erlc_group)
@@ -87,7 +86,6 @@ bot.tree.add_command(error_group)
 bot.tree.add_command(server_group)
 bot.tree.add_command(user_group)
 bot.tree.add_command(role_group)
-bot.tree.add_command(staff_group)
 
 # ========================= Bot on_ready =========================
 
@@ -214,7 +212,7 @@ async def ping_prefix(ctx):
 async def say_slash(interaction: discord.Interaction, message: str):
     staff_role = interaction.guild.get_role(staff_role_id)
     if staff_role not in interaction.user.roles:
-        await interaction.response.send_message("{failed_emoji} You don't have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message(f"{failed_emoji} You don't have permission to use this command.", ephemeral=True)
         return
 
     await interaction.response.send_message(f"{tick_emoji} Message sent!", ephemeral=True)
@@ -588,11 +586,11 @@ async def on_message(message):
 async def unafk_slash(interaction: discord.Interaction):
     afk_role = interaction.guild.get_role(afk_role_id)
     if not afk_role:
-        await interaction.response.send_message("{error_emoji} AFK role not found on this server please open a ticket.", ephemeral=True)
+        await interaction.response.send_message(f"{error_emoji} AFK role not found on this server please open a ticket.", ephemeral=True)
         return
 
     if afk_role not in interaction.user.roles:
-        await interaction.response.send_message("{error_emoji} You are not marked as AFK.", ephemeral=True)
+        await interaction.response.send_message(f"{error_emoji} You are not marked as AFK.", ephemeral=True)
         return
 
     await interaction.user.remove_roles(afk_role, reason="User removed AFK status")
@@ -615,11 +613,11 @@ async def unafk_slash(interaction: discord.Interaction):
 async def unafk_prefix(ctx):
     afk_role = ctx.guild.get_role(afk_role_id)
     if not afk_role:
-        await ctx.send("{error_emoji} AFK role not found on this server please open a ticket.")
+        await ctx.send(f"{error_emoji} AFK role not found on this server please open a ticket.")
         return
 
     if afk_role not in ctx.author.roles:
-        await ctx.send("{error_emoji} You are not marked as AFK.")
+        await ctx.send(f"{error_emoji} You are not marked as AFK.")
         return
 
     await ctx.author.remove_roles(afk_role, reason="User removed AFK status")
@@ -652,12 +650,12 @@ async def userinfo_slash(interaction: discord.Interaction, member: discord.Membe
 
     embed.set_thumbnail(url=member.avatar.url if member.avatar else discord.Embed.Empty)
 
-    embed.add_field(name="📝 Username", value=f"{member.name}#{member.discriminator}", inline=True)
+    embed.add_field(name=f"{clipboard_emoji} Username", value=f"{member.name}#{member.discriminator}", inline=True)
     embed.add_field(name="🆔 User ID", value=member.id, inline=True)
     embed.add_field(name="📆 Account Created", value=member.created_at.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
     embed.add_field(name="📥 Joined Server", value=member.joined_at.strftime("%B %d, %Y at %H:%M UTC"), inline=False)
     embed.add_field(name="🎭 Roles", value=roles_display, inline=False)
-    embed.add_field(name="📶 Status", value=str(member.status).title(), inline=True)
+    embed.add_field(name=f"{pong_emoji} Status", value=str(member.status).title(), inline=True)
     embed.add_field(name="🤖 Bot?", value="Yes" if member.bot else "No", inline=True)
 
     embed.set_footer(text=f"Requested by {interaction.user}", icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
@@ -805,7 +803,7 @@ async def discord_invite_slash(interaction: discord.Interaction):
         )
     else:
         embed = discord.Embed(
-            title="{failed_emoji} Server Invite Error",
+            title=f"{failed_emoji} Server Invite Error",
             description="Unable to create or fetch an invite. Please check my permissions.",
             color=discord.Color.red()
         )
@@ -2126,7 +2124,7 @@ async def send_embed(channel_id: int, embed: discord.Embed):
 # === HANDLE ERROR CODES ===
 def get_error_message(http_status: int, api_code: str = None) -> str:
     messages = {
-        0:    f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact PRC support if this continues.",
+        0:    f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact support if this continues.",
         100:  f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
         101:  f"{error_emoji} **101 – Switching Protocols**: The server is switching protocols.",
         200:  f"{error_emoji} **200 – OK**: The request completed successfully.",
@@ -2303,7 +2301,7 @@ async def join_leave_log_task():
         status = "Joined" if joined else "Left"
 
         embed = discord.Embed(
-            title="📥 Player Join/Leave",
+            title="Player Join/Leave",
             color=discord.Color.green() if joined else discord.Color.red(),
             timestamp=datetime.fromtimestamp(ts, UTC)
         )
@@ -2554,7 +2552,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         color=discord.Color.blue()
     )
     embed.add_field(
-        name="{clipboard_emoji} Basic Info",
+        name=f"{clipboard_emoji} Basic Info",
         value=(
             f"> **Join Code:** [{server['JoinKey']}](https://policeroleplay.community/join/{server['JoinKey']})\n"
             f"> **Players:** {server['CurrentPlayers']}/{server['MaxPlayers']}\n"
@@ -2572,7 +2570,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         inline=False
     )
     embed.add_field(
-        name="{owner_emoji} Server Ownership",
+        name=f"{owner_emoji} Server Ownership",
         value=(
             f"> **Owner:** [{usernames[owner_id]}](https://roblox.com/users/{owner_id}/profile)\n"
             f"> **Co-Owners:** {', '.join([f'[{usernames[uid]}](https://roblox.com/users/{uid}/profile)' for uid in co_owner_ids]) or 'None'}"
