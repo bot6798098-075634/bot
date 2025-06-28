@@ -238,7 +238,7 @@ async def fetch_data():
 
         players_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/players") or []
         queue_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/queue") or []
-        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or {}
+        staff_data = await fetch_api(session, "https://api.policeroleplay.community/v1/server/staff") or []
 
         admins = staff_data.get("Admins", {})
         mods = staff_data.get("Mods", {})
@@ -290,8 +290,8 @@ async def fetch_data():
             "players": players_list
         }
 
-def keep_alive():
-    def run():
-        app.run(host="0.0.0.0", port=8080)
-    thread = Thread(target=run)
-    thread.start()
+# def keep_alive():
+    # def run():
+ #       app.run(host="0.0.0.0", port=8080)
+  #  thread = Thread(target=run)
+   # thread.start()
