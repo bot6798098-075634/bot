@@ -139,6 +139,7 @@ owner_emoji = "<:owner:1387900933006164160>"
 # ========================= Role IDs =========================
 
 staff_role_id = "1343234687505530902"
+staff_role_id_2 = "<@&1343234687505530902>"
 mod_role_id = "1346576470360850432"
 admin_role_id = "1346577013774880892"
 superviser_role_id = "1346577369091145728"
@@ -210,7 +211,7 @@ async def ping_prefix(ctx):
 @tree.command(name="say", description="Make the bot say something anonymously")
 @app_commands.describe(message="The message for the bot to say")
 async def say_slash(interaction: discord.Interaction, message: str):
-    staff_role = interaction.guild.get_role(staff_role_id)
+    staff_role = interaction.guild.get_role(staff_role_id_2)
     if staff_role not in interaction.user.roles:
         await interaction.response.send_message(f"{failed_emoji} You don't have permission to use this command.", ephemeral=True)
         return
