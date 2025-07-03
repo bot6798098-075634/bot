@@ -151,6 +151,16 @@ afk_role_id = "1355829296085729454"
 event_role_id = "1346740470272757760"
 staff_help_role_id = "1370096425282830437" 
 
+def is_staff():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        member = interaction.guild.get_member(interaction.user.id)
+        if member is None:
+            member = await interaction.guild.fetch_member(interaction.user.id)
+        if any(role.id == staff_role_id for role in member.roles):
+            return True
+        raise app_commands.CheckFailure("{failed_emoji} You do not have permission to use this command.")
+    return app_commands.check(predicate)
+
 # ========================= Slash commands and prefix commands =========================
 
 # ------------------------ ping slash command ------------------------
@@ -209,14 +219,15 @@ async def ping_prefix(ctx):
 
 @tree.command(name="say", description="Make the bot say something anonymously")
 @app_commands.describe(message="The message for the bot to say")
-async def say_slash(interaction: discord.Interaction, message: str):
-    staff_role = interaction.guild.get_role(staff_role_id)
-    if staff_role not in interaction.user.roles:
-        await interaction.response.send_message(f"{failed_emoji} You don't have permission to use this command.", ephemeral=True)
-        return
-
+@is_staff()
+async def say_slash(interaction: Interaction, message: str):
     await interaction.response.send_message(f"{tick_emoji} Message sent!", ephemeral=True)
     await interaction.channel.send(message)
+
+@say_slash.error
+async def say_slash_error(interaction: Interaction, error):
+    if isinstance(error, app_commands.CheckFailure):
+        await interaction.response.send_message(f"{failed_emoji} You don't have permission to use this command.", ephemeral=True)
 
 # ------------------------ Say prefix command ------------------------
 
@@ -2674,15 +2685,7 @@ async def players(interaction: discord.Interaction, filter: str = None):
 
     await interaction.followup.send(embed=embed)
 
-def is_staff():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        member = interaction.guild.get_member(interaction.user.id)
-        if member is None:
-            member = await interaction.guild.fetch_member(interaction.user.id)
-        if any(role.id == staff_role_id for role in member.roles):
-            return True
-        raise app_commands.CheckFailure("{failed_emoji} You do not have permission to use this command.")
-    return app_commands.check(predicate)
+
 
 async def get_server_players():
     global session
