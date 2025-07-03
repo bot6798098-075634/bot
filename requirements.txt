@@ -5,3 +5,4 @@ aiohttp==3.12.11
 nest-asyncio==1.6.0
 requests>=2.32.4
 requests-oauthlib
+PyNaCl>=1.5.0
