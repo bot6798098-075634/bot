@@ -4,6 +4,7 @@ import discord
 import asyncio
 import random
 import requests
+from discord import app_commands, Interaction
 import sys
 import subprocess
 import os
