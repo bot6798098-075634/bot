@@ -91,30 +91,28 @@ bot.tree.add_command(role_group)
 
 @bot.event
 async def on_ready():
+    global session
+
     try:
         await bot.tree.sync()
-        await bot.tree.sync(guild=discord.Object(id=1343179590247645205))  # Optional: Your specific guild ID
+        await bot.tree.sync(guild=discord.Object(id=1343179590247645205))  # optional guild ID
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
     bot.start_time = datetime.now(timezone.utc)
 
-    global session
     if session is None or session.closed:
         session = aiohttp.ClientSession()
 
-    # Start background tasks
     try:
-        join_leave_log_task.start()
         kill_log_task.start()
         process_joins_loop.start()
         check_log_commands.start()
         update_vc_status.start()
         check_staff_livery.start()
     except Exception as e:
-        print(f"Error starting background tasks: {e}")
+        print(f"Failed to start background tasks: {e}")
 
-    # Set bot presence
     await bot.change_presence(
         status=discord.Status.dnd,
         activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
@@ -122,6 +120,7 @@ async def on_ready():
 
     print(f"{bot.user} has connected to Discord and is watching over the server.")
     print("-----------------------------------------------------------------------")
+
 
 # ========================= Emojis =========================
 
@@ -2100,22 +2099,6 @@ ROBLOX_DISCORD_LINKS = {
     "VIPUser987": 123456789012345678,      
 }
 
-# Voice channel abbreviation map
-VC_ABBREVIATIONS = {
-    "MS1": 112233445566778800,
-    "MS2": 112233445566778801,
-    "STAFF": 112233445566778802,
-    "G1": 112233445566778803,
-    "G2": 112233445566778804,
-    "M": 112233445566778805
-}
-
-# Roblox username to Discord user ID
-ROBLOX_TO_DISCORD = {
-    "ModUser1": 998877665544332211,
-    "ModUser2": 887766554433221100
-}
-
 welcomed_players = set()
 handled_usernames = set()
 last_checked_time = 0
@@ -2133,7 +2116,10 @@ HEADERS_POST = {
 COMMAND_LOG_CHANNEL_ID = 1381267054354632745
 JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
 KILL_LOG_CHANNEL_ID = 1381267054354632745
+MODCALL_LOG_CHANNEL_ID = 1381267054354632745
 ALERT_LOG_CHANNEL_ID = 1381267054354632745
+VEHICLE_LOG_CHANNEL_ID = 1381267054354632745
+TEAM_LOG_CHANNEL_ID = 1381267054354632745
 
 async def send_embed(channel_id: int, embed: discord.Embed):
     channel = bot.get_channel(channel_id)
@@ -2291,169 +2277,137 @@ async def erlc_command(interaction: discord.Interaction, command: str):
     await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
 
 
-@tasks.loop(seconds=60)
-async def join_leave_log_task():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/joinlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                logger.error(f"Failed to fetch join logs: {resp.status}")
-                return
-            data = await resp.json()
+# Helper to make Roblox user profile link
+def get_user_link(user_id: int, username: str) -> str:
+    return f"[{username}](https://roblox.com/users/{user_id}/profile)"
 
-    if not data:
-        return
+# Helper to get current UTC timestamp string
+def get_timestamp() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
+# Join Log
+async def send_join_embed(user_id: int, username: str, bot: discord.Client):
     channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
-        logger.warning("Join/leave log channel not found")
+        print("Join/Leave log channel not found.")
         return
 
-    if not hasattr(join_leave_log_task, "last_ts"):
-        join_leave_log_task.last_ts = 0
+    embed = discord.Embed(
+        title="Join Log",
+        description=f"{get_user_link(user_id, username)} joined at `{get_timestamp()}`",
+        colour=0x00f504,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
 
-    new_entries = [entry for entry in data if entry.get("Timestamp", 0) > join_leave_log_task.last_ts]
-    if not new_entries:
-        return
-
-    for entry in new_entries:
-        ts = entry.get("Timestamp", 0)
-        player = entry.get("Player", "Unknown")
-        joined = entry.get("Join", True)
-        status = "Joined" if joined else "Left"
-
-        embed = discord.Embed(
-            title="Player Join/Leave",
-            color=discord.Color.green() if joined else discord.Color.red(),
-            timestamp=datetime.fromtimestamp(ts, UTC)
-        )
-        embed.add_field(name="Player", value=player, inline=True)
-        embed.add_field(name="Status", value=status, inline=True)
-        embed.set_footer(text="SWAT Roleplay Community")
-
-        await channel.send(embed=embed)
-
-        if ts > join_leave_log_task.last_ts:
-            join_leave_log_task.last_ts = ts
-
-
-@tasks.loop(seconds=60)
-async def kill_log_task():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/killlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                logger.error(f"Failed to fetch kill logs: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        return
-
-    channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
-    alert_channel = bot.get_channel(ALERT_LOG_CHANNEL_ID)
+# Leave Log
+async def send_leave_embed(user_id: int, username: str, bot: discord.Client):
+    channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
-        logger.warning("Kill log channel not found")
-        return
-    if not alert_channel:
-        logger.warning("Alert log channel not found")
-
-    if not hasattr(kill_log_task, "last_ts"):
-        kill_log_task.last_ts = 0
-
-    new_entries = [entry for entry in data if entry.get("Timestamp", 0) > kill_log_task.last_ts]
-    if not new_entries:
-        return
-
-    for entry in new_entries:
-        ts = entry.get("Timestamp", 0)
-        killer = entry.get("Killer", "Unknown")
-        killed = entry.get("Killed", "Unknown")
-
-        embed = discord.Embed(
-            title="🔪 Kill Log",
-            color=discord.Color.dark_red(),
-            timestamp=datetime.datetime.fromtimestamp(ts, UTC)
-        )
-        embed.add_field(name="Killer", value=killer, inline=True)
-        embed.add_field(name="Killed", value=killed, inline=True)
-        embed.set_footer(text="SWAT Roleplay Community")
-
-        await channel.send(embed=embed)
-
-        killer_id = killer
-        kill_tracker[killer_id].append(ts)
-        while kill_tracker[killer_id] and (ts - kill_tracker[killer_id][0] > 60):
-            kill_tracker[killer_id].popleft()
-
-        if len(kill_tracker[killer_id]) >= 4:
-            if alert_channel:
-                alert_embed = discord.Embed(
-                    title="🚨 Mass Kill Alert! 🚨",
-                    description=f"**{killer}** has killed {len(kill_tracker[killer_id])} players within 1 minute.",
-                    color=discord.Color.orange(),
-                    timestamp=datetime.datetime.fromtimestamp(ts, UTC)
-                )
-                alert_embed.set_footer(text="PRC Alert System")
-                await alert_channel.send(embed=alert_embed)
-
-            kill_tracker[killer_id].clear()
-
-        if ts > kill_log_task.last_ts:
-            kill_log_task.last_ts = ts
-
-@bot.tree.command(name="erlc_join_leave_log", description="Fetch the latest join/leave logs from erlc server")
-async def erlc_join_leave_log(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/joinlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch join logs, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No join/leave logs found.")
+        print("Join/Leave log channel not found.")
         return
 
     embed = discord.Embed(
-        title="{klipbord_emoji} Join/Leave Logs",
-        color=discord.Color.blue(),
-        timestamp=datetime.now(timezone.utc)
+        title="Leave Log",
+        description=f"{get_user_link(user_id, username)} left at `{get_timestamp()}`",
+        colour=0xf50000,
     )
-    for entry in data:
-        ts = entry.get("Timestamp", 0)
-        player = entry.get("Player", "Unknown")
-        joined = entry.get("Join", True)
-        status = "Joined" if joined else "Left"
-        embed.add_field(name=f"{status} at {datetime.fromtimestamp(ts, timezone.utc)}", value=player, inline=False)
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
 
-
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="erlc_command_logs", description="Get the list of executed commands")
-async def erlc_command_logs(interaction: discord.Interaction): 
-    await interaction.response.defer()
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/commandlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch command logs, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No command logs found.")
+# Kill Log
+async def send_kill_embed(killer_id: int, killer_name: str, killed_id: int, killed_name: str, bot: discord.Client):
+    channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
+    if not channel:
+        print("Kill log channel not found.")
         return
 
     embed = discord.Embed(
-        title="{clipbord_emoji} Command Logs",
-        color=discord.Color.blue(),
-        timestamp = datetime.now(timezone.utc)
+        title="Kill Log",
+        description=f"{get_user_link(killer_id, killer_name)} killed {get_user_link(killed_id, killed_name)} at `{get_timestamp()}`",
+        colour=0x00abf5,
     )
-    for log in data:
-        embed.add_field(name=log.get("Command", "Unknown"), value=f"Executed by: {log.get('User', 'Unknown')}", inline=False)
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
 
-    await interaction.followup.send(embed=embed)
+# Modcall Log
+async def send_modcall_embed(mod_id: int, mod_name: str, caller_id: int, caller_name: str, bot: discord.Client):
+    channel = bot.get_channel(MODCALL_LOG_CHANNEL_ID)
+    if not channel:
+        print("Modcall log channel not found.")
+        return
+
+    embed = discord.Embed(
+        title="Modcall Log",
+        description=f"{get_user_link(mod_id, mod_name)} responded to caller {get_user_link(caller_id, caller_name)} at `{get_timestamp()}`",
+        colour=0x00abf5,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
+
+# Command Log
+async def send_command_embed(user_id: int, username: str, command: str, bot: discord.Client):
+    channel = bot.get_channel(COMMAND_LOG_CHANNEL_ID)
+    if not channel:
+        print("Command log channel not found.")
+        return
+
+    embed = discord.Embed(
+        title="Command Log",
+        description=f"{get_user_link(user_id, username)} ran the command `{command}` at `{get_timestamp()}`",
+        colour=0x00abf5,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
+
+# Vehicle Log
+async def send_vehicle_embed(user_id: int, username: str, vehicle: str, livery: str, team: str, bot: discord.Client):
+    channel = bot.get_channel(VEHICLE_LOG_CHANNEL_ID)
+    if not channel:
+        print("Vehicle log channel not found.")
+        return
+
+    embed = discord.Embed(
+        title="Vehicle Log",
+        description=f"{get_user_link(user_id, username)} spawned {vehicle} with the livery {livery} on {team} at `{get_timestamp()}`",
+        colour=0x00abf5,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
+
+# Team Join Log
+async def send_team_join_embed(user_id: int, username: str, team: str, bot: discord.Client):
+    channel = bot.get_channel(TEAM_LOG_CHANNEL_ID)
+    if not channel:
+        print("Team log channel not found.")
+        return
+
+    embed = discord.Embed(
+        title="Team Log",
+        description=f"{get_user_link(user_id, username)} joined **{team}** at `{get_timestamp()}`",
+        colour=0x00abf5,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
+
+# Team Leave Log
+async def send_team_leave_embed(user_id: int, username: str, team: str, bot: discord.Client):
+    channel = bot.get_channel(TEAM_LOG_CHANNEL_ID)
+    if not channel:
+        print("Team log channel not found.")
+        return
+
+    embed = discord.Embed(
+        title="Team Log",
+        description=f"{get_user_link(user_id, username)} left **{team}** at `{get_timestamp()}`",
+        colour=0x00abf5,
+    )
+    embed.set_footer(text="SWAT Roleplay Community")
+    await channel.send(embed=embed)
+
+
+
+
 
 @bot.tree.command(name="roblox_user_info", description="Get public info about a Roblox user by ID")
 @app_commands.describe(user_id="The Roblox User ID to fetch info for")
@@ -2504,7 +2458,7 @@ async def roblox_user_info(interaction: discord.Interaction, user_id: str):
 
 
 
-
+last_refresh = {}
 
 
 
@@ -2534,14 +2488,19 @@ class InfoView(discord.ui.View):
             url="https://policeroleplay.community/join?code=SWATxRP&placeId=2534724415"
         ))
 
-    @discord.ui.button(label="🔁 Refresh", style=discord.ButtonStyle.blurple)
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.interaction.user.id:
-            await interaction.response.send_message("{error_emoji} You can't use this button.", ephemeral=True)
-            return
+@discord.ui.button(label="🔁 Refresh", style=discord.ButtonStyle.blurple)
+async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+    now = time()
+    if interaction.user.id != self.interaction.user.id:
+        await interaction.response.send_message("⚠️ You can't use this button.", ephemeral=True)
+        return
+    if now - last_refresh.get(interaction.user.id, 0) < 5:
+        await interaction.response.send_message("⏱️ Please wait a few seconds before refreshing again.", ephemeral=True)
+        return
 
-        embed = await self.embed_callback()
-        await interaction.response.edit_message(embed=embed)
+    last_refresh[interaction.user.id] = now
+    embed = await self.embed_callback()
+    await interaction.response.edit_message(embed=embed)
 
 async def create_server_info_embed(interaction: discord.Interaction) -> discord.Embed:
     global session
@@ -3298,7 +3257,7 @@ def fetch_command_logs():
 
 # --- DISCORD BOT EVENTS ---
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=120)
 async def process_joins_loop():
     logs = get_join_logs()
     for log in logs:
@@ -3325,53 +3284,6 @@ async def process_joins_loop():
 
         handled_usernames.add(player_name)
 
-@tasks.loop(seconds=100)
-async def check_log_commands():
-    logs = fetch_command_logs()
-    guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        print("{failed_emoji} Guild not found")
-        return
-
-    for log in logs:
-        command = log["Command"]
-        roblox_username = log["Player"].split(":")[0]
-
-        match = re.match(r":log vc\s+(\S+)(?:\s+(\S+))?", command)
-        if not match:
-            continue
-
-        if match.group(2):  # :log vc user abbrev
-            target_username = match.group(1)
-            abbrev = match.group(2).upper()
-        else:  # :log vc abbrev
-            target_username = roblox_username
-            abbrev = match.group(1).upper()
-
-        vc_id = VC_ABBREVIATIONS.get(abbrev)
-        if not vc_id:
-            print(f"{failed_emoji} Invalid VC abbreviation: {abbrev}")
-            continue
-
-        discord_id = ROBLOX_TO_DISCORD.get(target_username)
-        if not discord_id:
-            print(f"{error_emoji} No Discord user linked for {target_username}")
-            continue
-
-        member = guild.get_member(discord_id)
-        if not member:
-            print(f"{failed_emoji} Member not in guild: {discord_id}")
-            continue
-
-        if not member.voice or not member.voice.channel:
-            print(f"ℹ️ {member.display_name} not in VC")
-            continue
-
-        try:
-            await member.move_to(guild.get_channel(vc_id))
-            print(f"{tick_emoji} Moved {member.display_name} to {abbrev}")
-        except Exception as e:
-            print(f"{failed_emoji} Failed to move {member.display_name}: {e}")
 
 @tasks.loop(seconds=400)
 async def update_vc_status():
@@ -3410,7 +3322,7 @@ async def update_vc_status():
         print("{failed_emoji} Failed to update VC names:", e)
 
 async def check_vehicle_restrictions(bot):
-    headers = {"server-key": "YOUR_SERVER_KEY"}
+    headers = {"server-key": "API_KEY"}
     try:
         response = requests.get("https://api.policeroleplay.community/v1/server/vehicles", headers=headers)
         vehicles = response.json()
@@ -3454,7 +3366,7 @@ async def set_restriction(interaction: discord.Interaction, vehicle: str, role: 
     RESTRICTED_VEHICLES[vehicle] = [role.id]
     await interaction.response.send_message(f"{tick_emoji} Set restriction: `{vehicle}` → `{role.name}`", ephemeral=True)
 
-@tasks.loop(seconds=30)  # every 30 seconds, or adjust as you want
+@tasks.loop(seconds=120)  # every 30 seconds, or adjust as you want
 async def check_staff_livery():
     headers = {"server-key": API_KEY}
     try:
