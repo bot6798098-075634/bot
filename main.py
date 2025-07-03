@@ -2605,17 +2605,34 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
 
     return embed
 
-# Add a subcommand to /erlc -> /erlc info
 @erlc_group.command(name="info", description="Get ER:LC server info with live data.")
 async def erlc_info(interaction: discord.Interaction):
-    await interaction.response.defer()
+    await interaction.response.defer(thinking=True)
     try:
         embed = await create_server_info_embed(interaction)
         view = InfoView(interaction, lambda: create_server_info_embed(interaction))
         await interaction.followup.send(embed=embed, view=view)
+    except discord.HTTPException as e:
+        if e.status == 429:
+            print("[WARNING] Rate limited by Discord or Cloudflare. Retrying in 2s...")
+            await asyncio.sleep(2)
+            try:
+                await interaction.followup.send("⚠️ You are being rate limited. Please try again shortly.", ephemeral=True)
+            except Exception as retry_err:
+                print(f"[ERROR] Retry also failed: {retry_err}")
+        else:
+            print(f"[ERROR] Unexpected HTTP error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ A Discord error occurred.", ephemeral=True)
     except Exception as e:
         print(f"[ERROR] /info command failed: {e}")
-        await interaction.followup.send("{failed_emoji} Failed to fetch server information.")
+        try:
+            await interaction.followup.send("❌ Failed to fetch server information.", ephemeral=True)
+        except discord.errors.HTTPException:
+            # Avoid crashing if followup fails again
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Error fetching server info.", ephemeral=True)
+
 
 
 
