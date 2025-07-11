@@ -4,6 +4,18 @@ import aiohttp
 import os
 from datetime import datetime, timezone
 from discord.ext import commands
+from keep_alive import keep_alive
+
+if __name__ == "__main__":
+    keep_alive()  # starts the Flask server to keep the app alive
+    # your other bot or app code here
+
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+UTC = timezone.utc
 
 # Create bot with intents
 intents = discord.Intents.all()
