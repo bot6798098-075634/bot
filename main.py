@@ -34,11 +34,9 @@ import typing
 import atexit
 import copy
 from dotenv import load_dotenv
+from keep_alive import keep_alive
 
 # ========================= Other =========================
-
-
-from keep_alive import keep_alive
 
 if __name__ == "__main__":
     keep_alive()  # starts the Flask server to keep the app alive
@@ -63,7 +61,7 @@ intents.voice_states = True
 intents = discord.Intents.all()
 
 kill_tracker = defaultdict(lambda: deque())
-bot = commands.Bot(command_prefix=".", intents=discord.Intents.all())
+bot = commands.Bot(command_prefix=".", intents=intents)
 
 tree = bot.tree
 events = []
