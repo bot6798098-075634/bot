@@ -3644,8 +3644,15 @@ async def send_transcript(channel, user_id):
 
     try:
         await user.send("📄 Here's the transcript of your modmail session:", file=transcript_file)
-    except:
-        pass
+    except discord.Forbidden:
+        # User has DMs off or blocked the bot
+        if log_channel:
+            await log_channel.send(f"⚠️ Could not DM transcript to `{user}` — DMs are closed.")
+    except discord.HTTPException as e:
+        # Some other issue occurred during the DM
+        if log_channel:
+            await log_channel.send(f"⚠️ Failed to send transcript to `{user}`: {e}")
+
 
 @bot.event
 async def on_message(message):
@@ -3877,6 +3884,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
