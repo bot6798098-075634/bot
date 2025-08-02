@@ -13,7 +13,7 @@ If you discover a security vulnerability in this project, please **do not** crea
 
 ### How to Report
 
-- Or DM me on Discord: **yourname#1234**
+- Or DM me on Discord: **bob076161** ID: **1276264248095412387**
 
 Please include:
 
