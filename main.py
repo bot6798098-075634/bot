@@ -3703,12 +3703,23 @@ async def claim(interaction: discord.Interaction):
 
     user_id = int(topic.replace("ID:", ""))
     user = await bot.fetch_user(user_id)
+
     claimed_by[user_id] = interaction.user.id
     await interaction.response.send_message(f"✅ Claimed by {interaction.user.mention}")
+
     try:
         await user.send(f"👮 Your modmail was claimed by {interaction.user.name}.")
-    except:
-        pass
+    except discord.Forbidden:
+        # User has DMs off or blocked the bot
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)  # Optional: log somewhere
+        if log_channel:
+            await log_channel.send(f"⚠️ Could not DM user `{user}` about the claim — DMs are disabled.")
+    except discord.HTTPException as e:
+        # Any other DM failure
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"⚠️ Failed to send claim DM to `{user}`: {e}")
+
 
 @bot.tree.command(name="close", description="Close and archive this thread.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
@@ -3884,6 +3895,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
