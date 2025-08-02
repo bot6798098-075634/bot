@@ -2171,10 +2171,9 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
 @discord.app_commands.describe(command="The command to run (e.g. ':h Hello', ':m message', ':mod')")
 async def erlc_command(interaction: discord.Interaction, command: str):
     await interaction.response.defer()
-
     lowered = command.lower()
 
-    # Restrict dangerous commands
+    # Block dangerous commands
     if any(word in lowered for word in ["ban", "unban", "kick"]):
         embed = discord.Embed(
             title=f"{error_emoji} Command Blocked",
@@ -2187,7 +2186,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
-    # Handle `:log` command
+    # Handle :log separately
     if lowered.startswith(":log "):
         message_to_log = command[5:].strip()
         if not message_to_log:
@@ -2223,7 +2222,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
                     try:
                         data = await resp.json()
                         api_code = data.get("code")
-                    except:
+                    except Exception:
                         api_code = None
                     await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
                     return
@@ -2256,7 +2255,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
                 try:
                     data = await resp.json()
                     api_code = data.get("code")
-                except:
+                except Exception:
                     api_code = None
                 await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
                 return
@@ -2266,6 +2265,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         return
 
     await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
+
 
 
 @tasks.loop(seconds=60)
@@ -3864,4 +3864,5 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
