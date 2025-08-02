@@ -151,6 +151,18 @@ staff_help_role_id = "1370096425282830437"
 
 # ========================= Slash commands and prefix commands =========================
 
+async def send_error(ctx_or_interaction, description="If you continue to encounter errors, please notify the owner.", ephemeral=False):
+    embed = discord.Embed(
+        title=f"{error_emoji} Error!",
+        description=description,
+        color=0xFF1414
+    )
+    # Check if ctx_or_interaction is a commands.Context (prefix command) or discord.Interaction (slash command)
+    if hasattr(ctx_or_interaction, "response"):  # Interaction
+        await ctx_or_interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+    else:  # Context
+        await ctx_or_interaction.send(embed=embed)
+
 # ------------------------ ping slash command ------------------------
 
 @tree.command(name="ping", description="Check bot's latency and uptime")
@@ -222,7 +234,7 @@ async def emojis(interaction: discord.Interaction):
             f"{clipboard_emoji} `clipboard`\n"
             f"{owner_emoji} `owner`\n"
         ),
-        color="ADD8E6"
+        color=0x1499ff
     )
 
     if interaction.guild and interaction.guild.icon:
@@ -3941,6 +3953,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
