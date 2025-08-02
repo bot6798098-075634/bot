@@ -2317,6 +2317,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
 
 
 
+
 @tasks.loop(seconds=60)
 async def join_leave_log_task():
     async with aiohttp.ClientSession() as session:
@@ -3953,6 +3954,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
