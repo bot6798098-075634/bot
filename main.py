@@ -130,7 +130,7 @@ ping_emoji = "<:ping:1381073968873607229>"
 logo_emoji = "<:logo:1322987575375429662>"
 pong_emoji = "<:pong:1387845465315348480>"
 failed_emoji = "<:failed:1387853598733369435>"
-note_emoji = "<note:1387865341773873302>"
+note_emoji = "<:note:1387865341773873302>"
 clipboard_emoji = "<:clipboard:1387890654868410408>"
 owner_emoji = "<:owner:1387900933006164160>" 
 
@@ -150,6 +150,18 @@ event_role_id = "1346740470272757760"
 staff_help_role_id = "1370096425282830437" 
 
 # ========================= Slash commands and prefix commands =========================
+
+async def send_error(ctx_or_interaction, description="If you continue to encounter errors, please notify the owner.", ephemeral=False):
+    embed = discord.Embed(
+        title=f"{error_emoji} Error!",
+        description=description,
+        color=0xFF1414
+    )
+    # Check if ctx_or_interaction is a commands.Context (prefix command) or discord.Interaction (slash command)
+    if hasattr(ctx_or_interaction, "response"):  # Interaction
+        await ctx_or_interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+    else:  # Context
+        await ctx_or_interaction.send(embed=embed)
 
 # ------------------------ ping slash command ------------------------
 
@@ -202,6 +214,43 @@ async def ping_prefix(ctx):
 
     embed.set_footer(text="SWAT Roleplay Community")
     await ctx.send(embed=embed)
+
+
+
+
+@bot.tree.command(name="emojis", description="Display all bot emojis")
+async def emojis(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📦 Bot Emojis",
+        description=(
+            f"{time_emoji} `time`\n"
+            f"{tick_emoji} `tick`\n"
+            f"{error_emoji} `error`\n"
+            f"{ping_emoji} `ping`\n"
+            f"{pong_emoji} `pong`\n"
+            f"{logo_emoji} `logo`\n"
+            f"{failed_emoji} `failed`\n"
+            f"{note_emoji} `note`\n"
+            f"{clipboard_emoji} `clipboard`\n"
+            f"{owner_emoji} `owner`\n"
+        ),
+        color=0x1499ff
+    )
+
+    if interaction.guild and interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+
+    embed.set_footer(text="SWAT Roleplay Community")
+    await interaction.response.send_message(embed=embed)
+
+
+
+
+
+
+
+
+
 
 # ------------------------ Say slash command ------------------------
 
@@ -2122,29 +2171,29 @@ async def send_embed(channel_id: int, embed: discord.Embed):
 # === HANDLE ERROR CODES ===
 def get_error_message(http_status: int, api_code: str = None) -> str:
     messages = {
-        0:    f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact support if this continues.",
-        100:  f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
-        101:  f"{error_emoji} **101 – Switching Protocols**: The server is switching protocols.",
-        200:  f"{error_emoji} **200 – OK**: The request completed successfully.",
-        201:  f"{error_emoji} **201 – Created**: The request succeeded and a new resource was created.",
-        204:  f"{error_emoji} **204 – No Content**: Success, but no content returned.",
-        400:  f"{error_emoji} **400 – Bad Request**: The request was malformed or invalid.",
-        401:  f"{error_emoji} **401 – Unauthorized**: Missing or invalid authentication.",
-        403:  f"{error_emoji} **403 – Forbidden**: You do not have permission to access this resource.",
-        404:  f"{error_emoji} **404 – Not Found**: The requested resource does not exist.",
-        405:  f"{error_emoji} **405 – Method Not Allowed**: That method is not allowed on this endpoint.",
-        408:  f"{error_emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
-        409:  f"{error_emoji} **409 – Conflict**: The request could not be completed due to a conflict.",
-        410:  f"{error_emoji} **410 – Gone**: The resource has been permanently removed.",
-        415:  f"{error_emoji} **415 – Unsupported Media Type**: The media type is not supported.",
-        418:  f"{error_emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
-        422:  f"{error_emoji} **422 – No Players**: No players are currently in the private server.",
-        429:  f"{error_emoji} **429 – Too Many Requests**: You are being rate-limited. Slow down.",
-        500:  f"{error_emoji} **500 – Internal Server Error**: An internal server error occurred (possibly with Roblox).",
-        501:  f"{error_emoji} **501 – Not Implemented**: The server doesn't recognize this method.",
-        502:  f"{error_emoji} **502 – Bad Gateway**: Invalid response from an upstream server.",
-        503:  f"{error_emoji} **503 – Service Unavailable**: The server is overloaded or under maintenance.",
-        504:  f"{error_emoji} **504 – Gateway Timeout**: The upstream server did not respond in time.",
+        0: f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact support if this continues.",
+        100: f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
+        101: f"{error_emoji} **101 – Switching Protocols**: The server is switching protocols.",
+        200: f"{error_emoji} **200 – OK**: The request completed successfully.",
+        201: f"{error_emoji} **201 – Created**: The request succeeded and a new resource was created.",
+        204: f"{error_emoji} **204 – No Content**: Success, but no content returned.",
+        400: f"{error_emoji} **400 – Bad Request**: The request was malformed or invalid.",
+        401: f"{error_emoji} **401 – Unauthorized**: Missing or invalid authentication.",
+        403: f"{error_emoji} **403 – Forbidden**: You do not have permission to access this resource.",
+        404: f"{error_emoji} **404 – Not Found**: The requested resource does not exist.",
+        405: f"{error_emoji} **405 – Method Not Allowed**: That method is not allowed on this endpoint.",
+        408: f"{error_emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
+        409: f"{error_emoji} **409 – Conflict**: The request could not be completed due to a conflict.",
+        410: f"{error_emoji} **410 – Gone**: The resource has been permanently removed.",
+        415: f"{error_emoji} **415 – Unsupported Media Type**: The media type is not supported.",
+        418: f"{error_emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
+        422: f"{error_emoji} **422 – No Players**: No players are currently in the private server.",
+        429: f"{error_emoji} **429 – Too Many Requests**: You are being rate-limited. Slow down.",
+        500: f"{error_emoji} **500 – Internal Server Error**: An internal server error occurred (possibly with Roblox).",
+        501: f"{error_emoji} **501 – Not Implemented**: The server doesn't recognize this method.",
+        502: f"{error_emoji} **502 – Bad Gateway**: Invalid response from an upstream server.",
+        503: f"{error_emoji} **503 – Service Unavailable**: The server is overloaded or under maintenance.",
+        504: f"{error_emoji} **504 – Gateway Timeout**: The upstream server did not respond in time.",
         1001: f"{error_emoji} **1001 – Communication Error**: Failed to communicate with Roblox or the in-game server.",
         1002: f"{error_emoji} **1002 – System Error**: A backend error occurred. Try again later.",
         2000: f"{error_emoji} **2000 – Missing Server Key**: No server-key provided.",
@@ -2171,10 +2220,9 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
 @discord.app_commands.describe(command="The command to run (e.g. ':h Hello', ':m message', ':mod')")
 async def erlc_command(interaction: discord.Interaction, command: str):
     await interaction.response.defer()
-
     lowered = command.lower()
 
-    # Restrict dangerous commands
+    # Block dangerous commands
     if any(word in lowered for word in ["ban", "unban", "kick"]):
         embed = discord.Embed(
             title=f"{error_emoji} Command Blocked",
@@ -2187,7 +2235,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
-    # Handle `:log` command
+    # Handle :log separately
     if lowered.startswith(":log "):
         message_to_log = command[5:].strip()
         if not message_to_log:
@@ -2223,7 +2271,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
                     try:
                         data = await resp.json()
                         api_code = data.get("code")
-                    except:
+                    except Exception:
                         api_code = None
                     await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
                     return
@@ -2256,7 +2304,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
                 try:
                     data = await resp.json()
                     api_code = data.get("code")
-                except:
+                except Exception:
                     api_code = None
                 await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
                 return
@@ -2266,6 +2314,7 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         return
 
     await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
+
 
 
 @tasks.loop(seconds=60)
@@ -2559,7 +2608,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         inline=False
     )
     embed.add_field(
-        name="👮 Staff Info",
+        name=f"{clipboard_emoji} Staff Info",
         value=(
             f"> **Moderators:** {len(mods)}\n"
             f"> **Administrators:** {len(admins)}\n"
@@ -2601,23 +2650,33 @@ async def erlc_info(interaction: discord.Interaction):
 async def players(interaction: discord.Interaction, filter: str = None):
     await interaction.response.defer()
 
-    global session
     if session is None:
         await interaction.followup.send("HTTP session not ready.")
         return
 
     headers = {"server-key": API_KEY}
-    async with session.get(f"{API_BASE}/players", headers=headers) as resp:
-        if resp.status != 200:
-            await interaction.followup.send(f"{failed_emoji} Failed to fetch players (status {resp.status})")
-            return
-        players_data = await resp.json()
 
-    async with session.get(f"{API_BASE}/queue", headers=headers) as resp:
-        if resp.status != 200:
-            await interaction.followup.send(f"{failed_emoji} Failed to fetch queue (status {resp.status})")
-            return
-        queue_data = await resp.json()
+    # Fetch players
+    try:
+        async with session.get(f"{API_BASE}/players", headers=headers) as resp:
+            if resp.status != 200:
+                await interaction.followup.send(f"{failed_emoji} Failed to fetch players (status {resp.status})")
+                return
+            players_data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{failed_emoji} Error fetching players: `{e}`")
+        return
+
+    # Fetch queue
+    try:
+        async with session.get(f"{API_BASE}/queue", headers=headers) as resp:
+            if resp.status != 200:
+                await interaction.followup.send(f"{failed_emoji} Failed to fetch queue (status {resp.status})")
+                return
+            queue_data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{failed_emoji} Error fetching queue: `{e}`")
+        return
 
     staff = []
     actual_players = []
@@ -2626,8 +2685,9 @@ async def players(interaction: discord.Interaction, filter: str = None):
         try:
             username, id_str = p["Player"].split(":")
             player_id = int(id_str)
-        except Exception:
+        except (ValueError, KeyError):
             continue
+
         permission = p.get("Permission", "Normal")
         team = p.get("Team", "")
 
@@ -2649,14 +2709,14 @@ async def players(interaction: discord.Interaction, filter: str = None):
         if not players_list:
             return "> No players in this category."
         return ", ".join(
-            f"[{p['username']} ({p['team']})](https://roblox.com/users/{p['id']}/profile)" for p in players_list
+            f"[{p['username']} ({p['team']})](https://roblox.com/users/{p['id']}/profile)"
+            for p in players_list
         )
 
     embed = discord.Embed(
         title="SWAT Roleplay Community - Players",
         color=discord.Color.blue()
     )
-
     embed.description = (
         f"**Server Staff ({len(staff)})**\n"
         f"{format_players(staff)}\n\n"
@@ -2668,9 +2728,11 @@ async def players(interaction: discord.Interaction, filter: str = None):
 
     if interaction.guild and interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
+
     embed.set_footer(text="SWAT Roleplay Community")
 
     await interaction.followup.send(embed=embed)
+
 
 def is_staff():
     async def predicate(interaction: discord.Interaction) -> bool:
@@ -2930,11 +2992,11 @@ async def bans(
         await interaction.followup.send(embed=embed)
 
 def roblox_link(player_str: str):
-    """Returns [Name](link) or just name"""
+    """Returns [Name](link) or just name if format is invalid."""
     try:
         name, user_id = player_str.split(":")
         return f"[{name}](https://www.roblox.com/users/{user_id}/profile)"
-    except:
+    except ValueError:
         return player_str
 
 async def fetch_modcalls():
@@ -3594,7 +3656,7 @@ class ConfirmView(discord.ui.View):
         embed.set_footer(text=f"User ID: {self.user.id}")
         await channel.send(embed=embed)
 
-        await interaction.response.edit_message(content="✅ Sent to staff.", view=None)
+        await interaction.response.edit_message(content=f"{tick_emoji} Sent to staff.", view=None)
 
         await self.user.send("🔒 Use the button below to close this thread when done.", view=CloseView(self.user.id))
 
@@ -3615,7 +3677,7 @@ class CloseView(discord.ui.View):
         await channel.send("🛑 User closed the thread.")
         await send_transcript(channel, self.user_id)
         del active_threads[self.user_id]
-        await interaction.response.send_message("✅ Closed. Thank you!")
+        await interaction.response.send_message(f"{tick_emoji} Closed. Thank you!")
 
 async def send_transcript(channel, user_id):
     output = ""
@@ -3627,12 +3689,19 @@ async def send_transcript(channel, user_id):
     user = await bot.fetch_user(user_id)
 
     if log_channel:
-        await log_channel.send(f"📝 Transcript for user `{user}`", file=transcript_file)
+        await log_channel.send(f"{clipboard_emoji} Transcript for user `{user}`", file=transcript_file)
 
     try:
-        await user.send("📄 Here's the transcript of your modmail session:", file=transcript_file)
-    except:
-        pass
+        await user.send(f"{clipboard_emoji} Here's the transcript of your modmail session:", file=transcript_file)
+    except discord.Forbidden:
+        # User has DMs off or blocked the bot
+        if log_channel:
+            await log_channel.send(f"{error_emoji} Could not DM transcript to `{user}` — DMs are closed.")
+    except discord.HTTPException as e:
+        # Some other issue occurred during the DM
+        if log_channel:
+            await log_channel.send(f"{failed_emoji} Failed to send transcript to `{user}`: {e}")
+
 
 @bot.event
 async def on_message(message):
@@ -3671,7 +3740,7 @@ async def on_message(message):
                 embed.set_author(name=f"Staff: {message.author}")
                 await user.send(embed=embed)
             except Exception as e:
-                await message.channel.send(f"❌ Could not message user: {e}")
+                await message.channel.send(f"{failed_emoji} Could not message user: {e}")
 
 # ========== Slash Commands ==========
 @bot.tree.command(name="claim", description="Claim this modmail thread.")
@@ -3679,35 +3748,55 @@ async def on_message(message):
 async def claim(interaction: discord.Interaction):
     topic = interaction.channel.topic
     if not topic or not topic.startswith("ID:"):
-        return await interaction.response.send_message("❌ Not a modmail thread.", ephemeral=True)
+        return await interaction.response.send_message(f"{failed_emoji} Not a modmail thread.", ephemeral=True)
 
     user_id = int(topic.replace("ID:", ""))
     user = await bot.fetch_user(user_id)
+
     claimed_by[user_id] = interaction.user.id
-    await interaction.response.send_message(f"✅ Claimed by {interaction.user.mention}")
+    await interaction.response.send_message(f"{tick_emoji} Claimed by {interaction.user.mention}")
+
     try:
         await user.send(f"👮 Your modmail was claimed by {interaction.user.name}.")
-    except:
-        pass
+    except discord.Forbidden:
+        # User has DMs off or blocked the bot
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)  # Optional: log somewhere
+        if log_channel:
+            await log_channel.send(f"{error_emoji} Could not DM user `{user}` about the claim — DMs are disabled.")
+    except discord.HTTPException as e:
+        # Any other DM failure
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"{failed_emoji} Failed to send claim DM to `{user}`: {e}")
+
 
 @bot.tree.command(name="close", description="Close and archive this thread.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
 async def close(interaction: discord.Interaction):
     topic = interaction.channel.topic
     if not topic or not topic.startswith("ID:"):
-        return await interaction.response.send_message("❌ Not a modmail thread.", ephemeral=True)
+        return await interaction.response.send_message(f"{failed_emoji} Not a modmail thread.", ephemeral=True)
 
     user_id = int(topic.replace("ID:", ""))
-    await interaction.response.send_message("🔒 Closing and sending transcript...")
+
+    await interaction.response.send_message("🔒 Closing thread...")
     await interaction.channel.send("🔒 Closed by staff.")
+
     try:
         user = await bot.fetch_user(user_id)
         await user.send("🔒 Your modmail thread has been closed by staff.")
-    except:
-        pass
-    await send_transcript(interaction.channel, user_id)
+    except discord.Forbidden:
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"{error_emoji} Could not DM user `{user_id}` — DMs are disabled.")
+    except discord.HTTPException as e:
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"{failed_emoji} Failed to send close DM to `{user_id}`: {e}")
+
     if user_id in active_threads:
         del active_threads[user_id]
+
 
 @bot.tree.command(name="delete", description="Delete this modmail channel.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
@@ -3720,11 +3809,11 @@ async def delete(interaction: discord.Interaction):
 async def transcript(interaction: discord.Interaction):
     topic = interaction.channel.topic
     if not topic or not topic.startswith("ID:"):
-        return await interaction.response.send_message("❌ Not a modmail thread.", ephemeral=True)
+        return await interaction.response.send_message(f"{failed_emoji} Not a modmail thread.", ephemeral=True)
 
     user_id = int(topic.replace("ID:", ""))
     await send_transcript(interaction.channel, user_id)
-    await interaction.response.send_message("📄 Transcript sent.")
+    await interaction.response.send_message(f"{clipboard_emoji} Transcript sent.")
 
 
 
@@ -3864,3 +3953,14 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
+
+
+
+
+
+
+
+
+
+

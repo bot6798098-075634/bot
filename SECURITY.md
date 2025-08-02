@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://media.discordapp.net/attachments/1353062441398964414/1389659737221759096/thumbnail_Outlook-jghv2af0.png?ex=68656cfb&is=68641b7b&hm=2ac03622bd313bcf781e1404f95c157d7a35e2c4cb802eaa66bbd8b256a09d68&=&format=webp&quality=lossless&width=625&height=625" width="200" height="200" alt="ERLC Bot Logo"/>
+  <img src="emojis/logos/thumbnail_Outlook-jghv2af0.png" width="200" height="200" alt="ERLC Bot Logo"/>
 </p>
 
 <h1 align="center">ERLC Discord Bot</h1>
@@ -13,7 +13,7 @@ If you discover a security vulnerability in this project, please **do not** crea
 
 ### How to Report
 
-- Or DM me on Discord: **yourname#1234**
+- Or DM me on Discord: **bob076161** ID: **1276264248095412387**
 
 Please include:
 
