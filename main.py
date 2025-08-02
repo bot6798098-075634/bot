@@ -3729,16 +3729,25 @@ async def close(interaction: discord.Interaction):
         return await interaction.response.send_message("❌ Not a modmail thread.", ephemeral=True)
 
     user_id = int(topic.replace("ID:", ""))
-    await interaction.response.send_message("🔒 Closing and sending transcript...")
+
+    await interaction.response.send_message("🔒 Closing thread...")
     await interaction.channel.send("🔒 Closed by staff.")
+
     try:
         user = await bot.fetch_user(user_id)
         await user.send("🔒 Your modmail thread has been closed by staff.")
-    except:
-        pass
-    await send_transcript(interaction.channel, user_id)
+    except discord.Forbidden:
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"⚠️ Could not DM user `{user_id}` — DMs are disabled.")
+    except discord.HTTPException as e:
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
+        if log_channel:
+            await log_channel.send(f"⚠️ Failed to send close DM to `{user_id}`: {e}")
+
     if user_id in active_threads:
         del active_threads[user_id]
+
 
 @bot.tree.command(name="delete", description="Delete this modmail channel.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
@@ -3895,6 +3904,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
