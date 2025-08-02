@@ -2216,6 +2216,28 @@ def get_error_message(http_status: int, api_code: str = None) -> str:
     return base_message
 
 # === PRC COMMAND ===
+def build_embed(title: str, description: str, color: discord.Color, guild: discord.Guild | None = None) -> discord.Embed:
+    embed = discord.Embed(title=title, description=description, color=color)
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
+
+async def send_command_to_api(command: str) -> tuple[bool, str | None]:
+    payload = {"command": command}
+    try:
+        async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
+            if resp.status != 200:
+                try:
+                    data = await resp.json()
+                    api_code = data.get("code")
+                except Exception:
+                    api_code = None
+                return False, get_error_message(resp.status, api_code)
+    except Exception as e:
+        return False, f"{error_emoji} Exception occurred while sending command: `{e}`"
+    return True, None
+
 @erlc_group.command(name="command", description="Run a server command like :h, :m, :mod")
 @discord.app_commands.describe(command="The command to run (e.g. ':h Hello', ':m message', ':mod')")
 async def erlc_command(interaction: discord.Interaction, command: str):
@@ -2224,14 +2246,12 @@ async def erlc_command(interaction: discord.Interaction, command: str):
 
     # Block dangerous commands
     if any(word in lowered for word in ["ban", "unban", "kick"]):
-        embed = discord.Embed(
+        embed = build_embed(
             title=f"{error_emoji} Command Blocked",
             description="You are not allowed to use `ban`, `unban`, or `kick` commands.",
-            color=discord.Color.red()
+            color=discord.Color.red(),
+            guild=interaction.guild
         )
-        if interaction.guild and interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
-        embed.set_footer(text="SWAT Roleplay Community")
         await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
@@ -2239,14 +2259,12 @@ async def erlc_command(interaction: discord.Interaction, command: str):
     if lowered.startswith(":log "):
         message_to_log = command[5:].strip()
         if not message_to_log:
-            embed = discord.Embed(
+            embed = build_embed(
                 title=f"{error_emoji} Missing Log Message",
                 description="You must provide a message after `:log`.",
-                color=discord.Color.red()
+                color=discord.Color.red(),
+                guild=interaction.guild
             )
-            if interaction.guild and interaction.guild.icon:
-                embed.set_thumbnail(url=interaction.guild.icon.url)
-            embed.set_footer(text="SWAT Roleplay Community")
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
@@ -2264,20 +2282,9 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         log_embed.set_footer(text="SWAT Roleplay Community")
         await send_embed(COMMAND_LOG_CHANNEL_ID, log_embed)
 
-        payload = {"command": in_game_command}
-        try:
-            async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
-                if resp.status != 200:
-                    try:
-                        data = await resp.json()
-                        api_code = data.get("code")
-                    except Exception:
-                        api_code = None
-                    await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
-                    return
-        except Exception as e:
-            await interaction.followup.send(
-                f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
+        success, error_msg = await send_command_to_api(in_game_command)
+        if not success:
+            await interaction.followup.send(error_msg, ephemeral=True)
             return
 
         await interaction.followup.send(
@@ -2297,20 +2304,9 @@ async def erlc_command(interaction: discord.Interaction, command: str):
     command_embed.set_footer(text="SWAT Roleplay Community")
     await send_embed(COMMAND_LOG_CHANNEL_ID, command_embed)
 
-    payload = {"command": command}
-    try:
-        async with session.post(f"{API_BASE}/command", headers=HEADERS_POST, json=payload) as resp:
-            if resp.status != 200:
-                try:
-                    data = await resp.json()
-                    api_code = data.get("code")
-                except Exception:
-                    api_code = None
-                await interaction.followup.send(get_error_message(resp.status, api_code), ephemeral=True)
-                return
-    except Exception as e:
-        await interaction.followup.send(
-            f"{error_emoji} Exception occurred while sending command: `{e}`", ephemeral=True)
+    success, error_msg = await send_command_to_api(command)
+    if not success:
+        await interaction.followup.send(error_msg, ephemeral=True)
         return
 
     await interaction.followup.send(f"{tick_emoji} Command `{command}` sent successfully.", ephemeral=True)
@@ -3954,6 +3950,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
