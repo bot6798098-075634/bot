@@ -130,7 +130,7 @@ ping_emoji = "<:ping:1381073968873607229>"
 logo_emoji = "<:logo:1322987575375429662>"
 pong_emoji = "<:pong:1387845465315348480>"
 failed_emoji = "<:failed:1387853598733369435>"
-note_emoji = "<note:1387865341773873302>"
+note_emoji = "<:note:1387865341773873302>"
 clipboard_emoji = "<:clipboard:1387890654868410408>"
 owner_emoji = "<:owner:1387900933006164160>" 
 
@@ -3941,6 +3941,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
