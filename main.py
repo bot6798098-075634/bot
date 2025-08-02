@@ -2943,11 +2943,11 @@ async def bans(
         await interaction.followup.send(embed=embed)
 
 def roblox_link(player_str: str):
-    """Returns [Name](link) or just name"""
+    """Returns [Name](link) or just name if format is invalid."""
     try:
         name, user_id = player_str.split(":")
         return f"[{name}](https://www.roblox.com/users/{user_id}/profile)"
-    except:
+    except ValueError:
         return player_str
 
 async def fetch_modcalls():
@@ -3877,6 +3877,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
