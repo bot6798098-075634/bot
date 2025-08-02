@@ -222,7 +222,7 @@ async def emojis(interaction: discord.Interaction):
             f"{clipboard_emoji} `clipboard`\n"
             f"{owner_emoji} `owner`\n"
         ),
-        color=0x2f3136
+        color="ADD8E6"
     )
 
     if interaction.guild and interaction.guild.icon:
@@ -2596,7 +2596,7 @@ async def create_server_info_embed(interaction: discord.Interaction) -> discord.
         inline=False
     )
     embed.add_field(
-        name="👮 Staff Info",
+        name=f"{clipboard_emoji} Staff Info",
         value=(
             f"> **Moderators:** {len(mods)}\n"
             f"> **Administrators:** {len(admins)}\n"
@@ -3941,6 +3941,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
