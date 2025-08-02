@@ -2601,23 +2601,33 @@ async def erlc_info(interaction: discord.Interaction):
 async def players(interaction: discord.Interaction, filter: str = None):
     await interaction.response.defer()
 
-    global session
     if session is None:
         await interaction.followup.send("HTTP session not ready.")
         return
 
     headers = {"server-key": API_KEY}
-    async with session.get(f"{API_BASE}/players", headers=headers) as resp:
-        if resp.status != 200:
-            await interaction.followup.send(f"{failed_emoji} Failed to fetch players (status {resp.status})")
-            return
-        players_data = await resp.json()
 
-    async with session.get(f"{API_BASE}/queue", headers=headers) as resp:
-        if resp.status != 200:
-            await interaction.followup.send(f"{failed_emoji} Failed to fetch queue (status {resp.status})")
-            return
-        queue_data = await resp.json()
+    # Fetch players
+    try:
+        async with session.get(f"{API_BASE}/players", headers=headers) as resp:
+            if resp.status != 200:
+                await interaction.followup.send(f"{failed_emoji} Failed to fetch players (status {resp.status})")
+                return
+            players_data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{failed_emoji} Error fetching players: `{e}`")
+        return
+
+    # Fetch queue
+    try:
+        async with session.get(f"{API_BASE}/queue", headers=headers) as resp:
+            if resp.status != 200:
+                await interaction.followup.send(f"{failed_emoji} Failed to fetch queue (status {resp.status})")
+                return
+            queue_data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{failed_emoji} Error fetching queue: `{e}`")
+        return
 
     staff = []
     actual_players = []
@@ -2626,8 +2636,9 @@ async def players(interaction: discord.Interaction, filter: str = None):
         try:
             username, id_str = p["Player"].split(":")
             player_id = int(id_str)
-        except Exception:
+        except (ValueError, KeyError):
             continue
+
         permission = p.get("Permission", "Normal")
         team = p.get("Team", "")
 
@@ -2649,14 +2660,14 @@ async def players(interaction: discord.Interaction, filter: str = None):
         if not players_list:
             return "> No players in this category."
         return ", ".join(
-            f"[{p['username']} ({p['team']})](https://roblox.com/users/{p['id']}/profile)" for p in players_list
+            f"[{p['username']} ({p['team']})](https://roblox.com/users/{p['id']}/profile)"
+            for p in players_list
         )
 
     embed = discord.Embed(
         title="SWAT Roleplay Community - Players",
         color=discord.Color.blue()
     )
-
     embed.description = (
         f"**Server Staff ({len(staff)})**\n"
         f"{format_players(staff)}\n\n"
@@ -2668,9 +2679,11 @@ async def players(interaction: discord.Interaction, filter: str = None):
 
     if interaction.guild and interaction.guild.icon:
         embed.set_thumbnail(url=interaction.guild.icon.url)
+
     embed.set_footer(text="SWAT Roleplay Community")
 
     await interaction.followup.send(embed=embed)
+
 
 def is_staff():
     async def predicate(interaction: discord.Interaction) -> bool:
@@ -3864,5 +3877,6 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
