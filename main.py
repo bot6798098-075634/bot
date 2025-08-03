@@ -3779,14 +3779,15 @@ async def handle_modmail(message):
                     view=ConfirmView(user, message.content)
                 )
             except Exception as e:
-                print(f"Failed to send modmail confirmation: {e}")
+                logger.error(f"Failed to send modmail confirmation: {e}")
             return
+
         embed = discord.Embed(description=message.content, color=discord.Color.green())
         embed.set_author(name=str(user), icon_url=user.display_avatar.url)
         try:
             await channel.send(embed=embed)
         except Exception as e:
-            print(f"Failed to send message to modmail channel: {e}")
+            logger.error(f"Failed to send message to modmail channel: {e}")
 
     else:
         # Staff reply in modmail channel
@@ -3802,8 +3803,12 @@ async def handle_modmail(message):
                 failed_emoji = "❌"
                 try:
                     await message.channel.send(f"{failed_emoji} Could not message user: {e}")
-                except Exception:
-                    pass
+                except discord.Forbidden:
+                    logger.warning("Missing permission to send failure message in modmail channel.")
+                except discord.HTTPException as http_err:
+                    logger.error(f"HTTP error sending failure message: {http_err}")
+                except Exception as exc:
+                    logger.error(f"Unexpected error sending failure message: {exc}")
 
 
 
@@ -4021,6 +4026,7 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
