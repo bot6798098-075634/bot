@@ -3712,15 +3712,16 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Auto remove AFK if user sends a message and is AFK
     afk_role = message.guild.get_role(afk_role_id) if message.guild else None
+
+    # Auto-remove AFK role if user sends a message and is AFK
     if afk_role and afk_role in message.author.roles:
         await message.author.remove_roles(afk_role, reason="User sent a message, removed AFK")
         afk_reasons.pop(message.author.id, None)
         try:
             await message.channel.send(f"Welcome back, {message.author.mention}. I've removed your AFK status.")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed to send AFK removal message: {e}")
 
     # AFK mention detection
     if message.guild and afk_role:
@@ -3738,47 +3739,63 @@ async def on_message(message):
                 if message.guild.icon:
                     embed.set_thumbnail(url=message.guild.icon.url)
                 embed.set_footer(text="SWAT Roleplay Community")
-                await message.channel.send(embed=embed)
-                break
+                try:
+                    await message.channel.send(embed=embed)
+                except Exception as e:
+                    print(f"Failed to send AFK mention embed: {e}")
+                break  # notify only once per message
 
-    # Modmail DM handling
+    # Modmail DM handling (DMs only, no guild)
     if message.guild is None:
         user = message.author
+        guild = bot.get_guild(GUILD_ID)
+        channel = None
         if user.id in active_threads:
-            guild = bot.get_guild(GUILD_ID)
-            channel = guild.get_channel(active_threads[user.id]) if guild else None
-        else:
-            channel = None
-
+            if guild:
+                channel = guild.get_channel(active_threads[user.id])
         if not channel:
-            await message.channel.send(
-                embed=discord.Embed(
-                    title="Send to Staff?",
-                    description=message.content,
-                    color=discord.Color.orange()
-                ),
-                view=ConfirmView(user, message.content)
-            )
+            # No existing thread, send confirmation to user
+            try:
+                await message.channel.send(
+                    embed=discord.Embed(
+                        title="Send to Staff?",
+                        description=message.content,
+                        color=discord.Color.orange()
+                    ),
+                    view=ConfirmView(user, message.content)
+                )
+            except Exception as e:
+                print(f"Failed to send modmail confirmation: {e}")
             return
 
+        # Send user message to modmail channel
         embed = discord.Embed(description=message.content, color=discord.Color.green())
         embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-        if channel:
+        try:
             await channel.send(embed=embed)
+        except Exception as e:
+            print(f"Failed to send message to modmail channel: {e}")
+
     else:
+        # Staff reply to user in modmail channel (guild message with topic starting with "ID:")
         topic = message.channel.topic
         if topic and topic.startswith("ID:") and message.author.id != bot.user.id:
-            user_id = int(topic.replace("ID:", ""))
             try:
+                user_id = int(topic.replace("ID:", ""))
                 user = await bot.fetch_user(user_id)
                 embed = discord.Embed(description=message.content, color=discord.Color.purple())
                 embed.set_author(name=f"Staff: {message.author}")
                 await user.send(embed=embed)
             except Exception as e:
-                await message.channel.send(f"{failed_emoji} Could not message user: {e}")
+                failed_emoji = "❌"  # define this emoji somewhere globally if needed
+                try:
+                    await message.channel.send(f"{failed_emoji} Could not message user: {e}")
+                except Exception:
+                    pass  # suppress further errors here
 
-    # Process commands for prefix and slash
+    # Process commands (prefix & slash)
     await bot.process_commands(message)
+
 
 # --- Slash commands ---
 
@@ -3993,3 +4010,4 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
