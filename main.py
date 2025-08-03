@@ -3797,6 +3797,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
+
 # --- Slash commands ---
 
 @bot.tree.command(name="claim", description="Claim this modmail thread.")
@@ -4010,4 +4011,5 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
