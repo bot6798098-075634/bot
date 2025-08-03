@@ -3712,9 +3712,18 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    afk_role = message.guild.get_role(afk_role_id) if message.guild else None
+    await handle_auto_unafk(message)
+    await handle_afk_mentions(message)
+    await handle_modmail(message)
 
-    # Auto-remove AFK role if user sends a message and is AFK
+    # Process commands (both prefix and slash)
+    await bot.process_commands(message)
+
+
+async def handle_auto_unafk(message):
+    if not message.guild:
+        return
+    afk_role = message.guild.get_role(afk_role_id)
     if afk_role and afk_role in message.author.roles:
         await message.author.remove_roles(afk_role, reason="User sent a message, removed AFK")
         afk_reasons.pop(message.author.id, None)
@@ -3723,38 +3732,43 @@ async def on_message(message):
         except Exception as e:
             print(f"Failed to send AFK removal message: {e}")
 
-    # AFK mention detection
-    if message.guild and afk_role:
-        for user in message.mentions:
-            if afk_role in user.roles:
-                reason = afk_reasons.get(user.id, "AFK")
-                embed = discord.Embed(
-                    description=(
-                        f"{note_emoji} Please do not ping {user.mention}.\n"
-                        f"They are currently AFK: {reason}"
-                    ),
-                    color=discord.Color.orange(),
-                    timestamp=discord.utils.utcnow()
-                )
-                if message.guild.icon:
-                    embed.set_thumbnail(url=message.guild.icon.url)
-                embed.set_footer(text="SWAT Roleplay Community")
-                try:
-                    await message.channel.send(embed=embed)
-                except Exception as e:
-                    print(f"Failed to send AFK mention embed: {e}")
-                break  # notify only once per message
 
-    # Modmail DM handling (DMs only, no guild)
+async def handle_afk_mentions(message):
+    if not message.guild:
+        return
+    afk_role = message.guild.get_role(afk_role_id)
+    if not afk_role:
+        return
+    for user in message.mentions:
+        if afk_role in user.roles:
+            reason = afk_reasons.get(user.id, "AFK")
+            embed = discord.Embed(
+                description=(
+                    f"{note_emoji} Please do not ping {user.mention}.\n"
+                    f"They are currently AFK: {reason}"
+                ),
+                color=discord.Color.orange(),
+                timestamp=discord.utils.utcnow()
+            )
+            if message.guild.icon:
+                embed.set_thumbnail(url=message.guild.icon.url)
+            embed.set_footer(text="SWAT Roleplay Community")
+            try:
+                await message.channel.send(embed=embed)
+            except Exception as e:
+                print(f"Failed to send AFK mention embed: {e}")
+            break  # notify only once per message
+
+
+async def handle_modmail(message):
     if message.guild is None:
+        # DM from user
         user = message.author
         guild = bot.get_guild(GUILD_ID)
         channel = None
-        if user.id in active_threads:
-            if guild:
-                channel = guild.get_channel(active_threads[user.id])
+        if user.id in active_threads and guild:
+            channel = guild.get_channel(active_threads[user.id])
         if not channel:
-            # No existing thread, send confirmation to user
             try:
                 await message.channel.send(
                     embed=discord.Embed(
@@ -3767,8 +3781,6 @@ async def on_message(message):
             except Exception as e:
                 print(f"Failed to send modmail confirmation: {e}")
             return
-
-        # Send user message to modmail channel
         embed = discord.Embed(description=message.content, color=discord.Color.green())
         embed.set_author(name=str(user), icon_url=user.display_avatar.url)
         try:
@@ -3777,7 +3789,7 @@ async def on_message(message):
             print(f"Failed to send message to modmail channel: {e}")
 
     else:
-        # Staff reply to user in modmail channel (guild message with topic starting with "ID:")
+        # Staff reply in modmail channel
         topic = message.channel.topic
         if topic and topic.startswith("ID:") and message.author.id != bot.user.id:
             try:
@@ -3787,14 +3799,12 @@ async def on_message(message):
                 embed.set_author(name=f"Staff: {message.author}")
                 await user.send(embed=embed)
             except Exception as e:
-                failed_emoji = "❌"  # define this emoji somewhere globally if needed
+                failed_emoji = "❌"
                 try:
                     await message.channel.send(f"{failed_emoji} Could not message user: {e}")
                 except Exception:
-                    pass  # suppress further errors here
+                    pass
 
-    # Process commands (prefix & slash)
-    await bot.process_commands(message)
 
 
 
@@ -4011,5 +4021,6 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
