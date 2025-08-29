@@ -1,9 +1,12 @@
 # ========================= Import =========================
 
 import discord
-import discord, random, string, datetime, traceback, json
-import asyncio
 import random
+import string
+import datetime
+import traceback
+import json
+import asyncio
 import requests
 import sys
 import subprocess
@@ -11,39 +14,35 @@ import os
 import logging
 from discord import Embed
 import re
-import json
 import time
 from datetime import datetime, timezone, timedelta
-from collections import defaultdict
+from collections import defaultdict, deque
 from discord.ext import commands, tasks
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ui import View, Button, Select
 from discord.utils import get
 from discord.raw_models import RawReactionActionEvent
 import aiohttp
-from datetime import UTC
-from collections import defaultdict, deque
-from discord.ui import Button, View
-from discord import app_commands, ui
-import re, io
-import io
-import datetime
-from datetime import datetime
 from threading import Thread
-from datetime import datetime, timezone
-from datetime import timezone
 import typing
 import atexit
 import copy
 from dotenv import load_dotenv
 from keep_alive import keep_alive
-from discord.ext import commands
+import io  # Needed for transcripts
+
+# ========================= Helper =========================
+
+def apply_footer(embed, guild):
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text="SWAT Roleplay Community")
+    return embed
 
 # ========================= Other =========================
 
 if __name__ == "__main__":
     keep_alive()
-
 
 load_dotenv()
 
@@ -57,11 +56,9 @@ ERROR_COLOR = discord.Color.red()
 INFO_COLOR = discord.Color.blue()
 
 intents = discord.Intents.default()
-
 intents.message_content = True
 intents.guilds = True
-intents.members = True  
-
+intents.members = True
 
 kill_tracker = defaultdict(lambda: deque())
 
@@ -79,7 +76,6 @@ class MyBot(commands.Bot):
         await super().close()
 
 bot = MyBot(command_prefix='.', intents=intents)
-
 tree = bot.tree
 events = []
 
@@ -108,7 +104,7 @@ bot.tree.add_command(role_group)
 async def on_ready():
     try:
         await bot.tree.sync()
-        await bot.tree.sync(guild=discord.Object(id=1299000909363155024))  # Optional: Your specific guild ID
+        await bot.tree.sync(guild=discord.Object(id=1299000909363155024))
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
@@ -128,7 +124,6 @@ async def on_ready():
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
 
-    # Set bot presence
     await bot.change_presence(
         status=discord.Status.dnd,
         activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
@@ -3863,7 +3858,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        load_events()
+        # load_events() # Uncomment if you define it
         token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
