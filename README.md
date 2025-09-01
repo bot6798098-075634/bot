@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="emojis/logos/thumbnail_Outlook-jghv2af0.png" width="200" height="200" alt="ERLC Bot Logo"/>
+  <img src="logo.png" width="200" height="200" alt="ERLC Bot Logo"/>
 </p>
 
 <h1 align="center">ERLC Discord Bot</h1>
