@@ -1,11 +1,10 @@
 <p align="center">
-  <img src="logo.png" width="200" height="200" alt="ERLC Bot Logo"/>
+  <img src="logos/logo.png" width="200" height="200" alt="ERLC Bot Logo"/>
 </p>
 
 <h1 align="center">ERLC Discord Bot</h1>
-<p align="center"><b>Created by bob076161 (Discord)</b></p>
 
-# ER:LC PRC Discord Bot
+### ER:LC PRC Discord Bot
 
 A Discord bot integrating with the **PRC API** to enhance your Emergency Response: Liberty County server experience.
 
@@ -15,8 +14,14 @@ A Discord bot integrating with the **PRC API** to enhance your Emergency Respons
 
 ---
 
-## Features
+### Features
 
 - Real-time player join and leave notifications  
 - Slash commands for server info and control  
 - Integration with the PRC API 
+
+
+---
+<p align="center">
+  <b>Created by <a href="https://discord.com/users/1276264248095412387">bob076161</a> </b>
+</p>
