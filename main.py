@@ -405,11 +405,11 @@ async def sync(ctx):
 # ---------------------- ERLC setup ----------------------
 
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
-KILL_LOG_CHANNEL_ID = 1382852078048907274
-MODCALL_LOG_CHANNEL_ID = 1382852078048907274
-TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
-COMMAND_LOG_CHANNEL_ID = 1382852078048907274
+JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
+KILL_LOG_CHANNEL_ID = 1381267054354632745
+MODCALL_LOG_CHANNEL_ID = 1381267054354632745
+TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
+COMMAND_LOG_CHANNEL_ID = 1381267054354632745
  
 API_KEY = os.getenv("API_KEY")
 API_BASE = os.getenv("API_BASE")
@@ -1639,4 +1639,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
+
         print(f"🔥 Unexpected error occurred: {e}")
