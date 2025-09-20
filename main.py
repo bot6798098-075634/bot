@@ -317,10 +317,9 @@ async def uptime_slash(interaction: discord.Interaction):
 @bot.command(name="servers")
 @commands.is_owner()
 async def servers(ctx: commands.Context):
- # List all servers the bot is in.
+    # List all servers the bot is in.
     await ctx.defer()
     guilds = bot.guilds
-
     if not guilds:
         await ctx.send("The bot is not in any servers.")
         return
@@ -328,15 +327,16 @@ async def servers(ctx: commands.Context):
     for guild in guilds:
         owner = guild.owner
         invite_link = "No invite available"
-        try:
-            for channel in guild.text_channels:
-                if channel.permissions_for(guild.me).create_instant_invite:
+        for channel in guild.text_channels:
+            if channel.permissions_for(guild.me).create_instant_invite:
+                try:
                     invite = await channel.create_invite(max_age=3600, max_uses=1, unique=True)
                     invite_link = invite.url
                     break
-        except Exception:
-            pass
-
+                except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
+                    print(f"Failed to create invite for guild {guild.name}: {e}")
+                    # Keep invite_link as "No invite available"
+        
         embed = discord.Embed(
             title=guild.name,
             description=f"ID: `{guild.id}`\nOwner: {owner}\nMembers: {guild.member_count}\nInvite: {invite_link}",
@@ -344,9 +344,7 @@ async def servers(ctx: commands.Context):
         )
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-
         embed.set_footer(text=f"Running {BOT_VERSION}")
-
         await ctx.send(embed=embed)
 
 # ---------------------- /servers ----------------------
@@ -356,7 +354,6 @@ async def servers(ctx: commands.Context):
 async def servers(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     guilds = bot.guilds
-
     if not guilds:
         await interaction.followup.send("The bot is not in any servers.")
         return
@@ -364,14 +361,17 @@ async def servers(interaction: discord.Interaction):
     for guild in guilds:
         owner = guild.owner
         invite_link = "No invite available"
-        try:
-            for channel in guild.text_channels:
-                if channel.permissions_for(guild.me).create_instant_invite:
+
+        # Attempt to create an invite for the first available text channel
+        for channel in guild.text_channels:
+            if channel.permissions_for(guild.me).create_instant_invite:
+                try:
                     invite = await channel.create_invite(max_age=3600, max_uses=1, unique=True)
                     invite_link = invite.url
                     break
-        except Exception:
-            pass
+                except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
+                    print(f"Failed to create invite for guild '{guild.name}': {e}")
+                    # Keep invite_link as "No invite available"
 
         embed = discord.Embed(
             title=guild.name,
@@ -380,9 +380,8 @@ async def servers(interaction: discord.Interaction):
         )
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        
+
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 # ---------------------- .sync ----------------------
@@ -681,104 +680,116 @@ async def team_join_leave_log_task():
     if not session:
         session = aiohttp.ClientSession()
 
-    try:
-        async with session.get(
-            f"{API_BASE}/players", headers={"server-key": API_KEY}
-        ) as resp:
-            if resp.status != 200:
-                print(f"Failed to fetch players: {resp.status}")
-                return
-            players = await resp.json()
-    except Exception as e:
-        print(f"Error fetching players: {e}")
-        return
-
+    players = await fetch_players()
     if not players:
         return
 
-    # Get Discord channel
-    channel = bot.get_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
+    channel = await get_team_log_channel()
     if not channel:
-        try:
-            channel = await bot.fetch_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
-        except Exception as e:
-            print(f"Failed to fetch team log channel: {e}")
-            return
+        return
 
     if not hasattr(team_join_leave_log_task, "last_team_state"):
         team_join_leave_log_task.last_team_state = {}
 
+    join_events, leave_events = compute_team_changes(players, team_join_leave_log_task.last_team_state)
+
+    await send_log_embed(channel, "Team Join Log", join_events)
+    await send_log_embed(channel, "Team Leave Log", leave_events)
+
+
+# --- Helper Functions ---
+
+async def fetch_players():
+    try:
+        async with session.get(f"{API_BASE}/players", headers={"server-key": API_KEY}) as resp:
+            if resp.status != 200:
+                print(f"Failed to fetch players: {resp.status}")
+                return []
+            return await resp.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        print(f"Error fetching players: {e}")
+        return []
+
+
+async def get_team_log_channel():
+    channel = bot.get_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
+    if channel:
+        return channel
+    try:
+        return await bot.fetch_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
+    except discord.DiscordException as e:
+        print(f"Failed to fetch team log channel: {e}")
+        return None
+
+
+def compute_team_changes(players, last_team_state):
     join_events, leave_events = [], []
+    ts = int(time.time())
 
     for player in players:
-        # Parse "Player": "Username:123456789"
-        player_raw = player.get("Player", "Unknown:0")
-        try:
-            username, id_str = player_raw.split(":", 1)
-            player_id = int(id_str)
-        except (ValueError, AttributeError):
-            username = player_raw
-            player_id = 0
-
-        team_name = player.get("Team")
+        username, player_id = parse_player_id(player.get("Player", "Unknown:0"))
+        team_name = normalize_team_name(player.get("Team"))
         callsign = player.get("Callsign")
-
-        # Normalize team
-        if not team_name or team_name.lower() == "none":
-            team_name = None
-
-        previous_team = team_join_leave_log_task.last_team_state.get(player_id)
+        previous_team = last_team_state.get(player_id)
 
         if previous_team != team_name:
-            ts = int(time.time())
-            player_link = (
-                f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
-                if player_id else username
-            )
+            player_link = format_player_link(username, player_id)
+            process_team_change(join_events, leave_events, previous_team, team_name, player_link, callsign, ts)
 
-            if previous_team is None and team_name:
-                # Joined a team
-                log_text = f"{player_link} joined {team_name}"
-                if callsign:
-                    log_text += f" ({callsign})"
-                log_text += f" at <t:{ts}:F>"
-                join_events.append(log_text)
+        last_team_state[player_id] = team_name
 
-            elif previous_team and not team_name:
-                # Left a team
-                leave_events.append(f"{player_link} left {previous_team} at <t:{ts}:F>")
+    return join_events, leave_events
 
-            elif previous_team and team_name and previous_team != team_name:
-                # Switched teams
-                leave_events.append(f"{player_link} left {previous_team} at <t:{ts}:F>")
-                join_text = f"{player_link} joined {team_name}"
-                if callsign:
-                    join_text += f" ({callsign})"
-                join_text += f" at <t:{ts}:F>"
-                join_events.append(join_text)
 
-        # Update state
-        team_join_leave_log_task.last_team_state[player_id] = team_name
+def parse_player_id(player_raw):
+    try:
+        username, id_str = player_raw.split(":", 1)
+        return username, int(id_str)
+    except (ValueError, AttributeError):
+        return player_raw, 0
 
-    # Send join embed (batch)
-    if join_events:
-        embed = discord.Embed(
-            title="Team Join Log",
-            description="\n".join(join_events),
-            colour=0xffffff
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
 
-    # Send leave embed (batch)
-    if leave_events:
-        embed = discord.Embed(
-            title="Team Leave Log",
-            description="\n".join(leave_events),
-            colour=0xffffff
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
+def normalize_team_name(team_name):
+    if not team_name or team_name.lower() == "none":
+        return None
+    return team_name
+
+
+def format_player_link(username, player_id):
+    if player_id:
+        return f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
+    return username
+
+
+def process_team_change(join_events, leave_events, previous_team, current_team, player_link, callsign, ts):
+    if previous_team is None and current_team:
+        # Joined a team
+        text = f"{player_link} joined {current_team}"
+        if callsign:
+            text += f" ({callsign})"
+        join_events.append(f"{text} at <t:{ts}:F>")
+    elif previous_team and not current_team:
+        # Left a team
+        leave_events.append(f"{player_link} left {previous_team} at <t:{ts}:F>")
+    elif previous_team and current_team and previous_team != current_team:
+        # Switched teams
+        leave_events.append(f"{player_link} left {previous_team} at <t:{ts}:F>")
+        text = f"{player_link} joined {current_team}"
+        if callsign:
+            text += f" ({callsign})"
+        join_events.append(f"{text} at <t:{ts}:F>")
+
+
+async def send_log_embed(channel, title, events):
+    if not events:
+        return
+    embed = discord.Embed(
+        title=title,
+        description="\n".join(events),
+        colour=0xffffff
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
 
 # ---------------------- error code ----------------------
 
@@ -1278,169 +1289,145 @@ async def discord_cmd(ctx, subcommand: str = None):
 async def erlc(ctx, subcommand: str = None):
     """Prefix command: .erlc <subcommand>"""
     if not subcommand:
-        await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
-        return
+        return await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
 
     subcommand = subcommand.lower()
+    handlers = {
+        "info": handle_erlc_info,
+        "players": handle_erlc_players,
+        "code": handle_erlc_code,
+        "kills": handle_erlc_kills,
+        "command": handle_erlc_command,
+    }
 
-    if subcommand == "info":
-        try:
-            async with ctx.typing():
-                embed = await erlc_info_embed(ctx)
-                view = InfoView(ctx, lambda: erlc_info_embed(ctx))
-                await ctx.send(embed=embed, view=view)
-        except Exception as e:
-            error_message = await get_erlc_error_message(0, exception=e)
-            await ctx.send(error_message)
-            print(f"[ERROR] .erlc info failed: {e}")
-
-    elif subcommand == "players":
-        try:
-            async with ctx.typing():
-                async with aiohttp.ClientSession() as session:
-                    headers = {"server-key": API_KEY}
-
-                    # Fetch server info
-                    async with session.get(f"{API_BASE}", headers=headers) as resp:
-                        if resp.status != 200:
-                            return await ctx.send(await get_erlc_error_message(resp))
-                        server_data = await resp.json()
-                        player_count = server_data.get("CurrentPlayers", 0)
-                        max_player_count = server_data.get("MaxPlayers", 0)
-
-                    # Fetch players
-                    async with session.get(f"{API_BASE}/players", headers=headers) as resp:
-                        if resp.status != 200:
-                            return await ctx.send(await get_erlc_error_message(resp))
-                        players_data = await resp.json()
-
-                if not players_data or player_count == 0:
-                    description = "> There are no players in-game."
-                else:
-                    description = "\n".join(
-                        [
-                            f'> [{p["Player"].split(":")[0]}](https://www.roblox.com/users/{p["Player"].split(":")[1]}/profile)'
-                            for p in players_data
-                        ]
-                    )
-
-                embed = discord.Embed(
-                    title=f"ER:LC Players ({player_count}/{max_player_count})",
-                    description=description,
-                    colour=0x1E77BE,
-                )
-                embed.set_author(
-                    name=ctx.guild.name,
-                    icon_url=ctx.guild.icon.url if ctx.guild.icon else None,
-                )
-                embed.set_footer(text=f"Running {BOT_VERSION}")
-
-                await ctx.send(embed=embed)
-        except Exception as e:
-            error_message = await get_erlc_error_message(0, exception=e)
-            await ctx.send(error_message)
-            print(f"[ERROR] .erlc players failed: {e}")
-
-    elif subcommand == "code":
-        try:
-            async with ctx.typing():
-                async with aiohttp.ClientSession() as session:
-                    headers = {"server-key": API_KEY}
-
-                    # Fetch server info for JoinKey
-                    async with session.get(f"{API_BASE}", headers=headers) as resp:
-                        if resp.status != 200:
-                            return await ctx.send(await get_erlc_error_message(resp))
-                        server_data = await resp.json()
-                        erlc_code = server_data.get("JoinKey", "Unknown")
-
-                embed = discord.Embed(
-                    title="ER:LC Code",
-                    description=f"The ER:LC code is `{erlc_code}`.",
-                    colour=0x1E77BE,
-                )
-                embed.set_author(
-                    name=ctx.guild.name,
-                    icon_url=ctx.guild.icon.url if ctx.guild.icon else None,
-                )
-                embed.set_footer(text=f"Running {BOT_VERSION}")
-
-                await ctx.send(embed=embed)
-        except Exception as e:
-            error_message = await get_erlc_error_message(0, exception=e)
-            await ctx.send(error_message)
-            print(f"[ERROR] .erlc code failed: {e}")
-
-    elif subcommand == "kills":
-        try:
-            async with ctx.typing():
-                async with aiohttp.ClientSession() as session:
-                    headers = {"server-key": API_KEY}
-
-                    # Fetch kill logs
-                    async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
-                        if resp.status != 200:
-                            return await ctx.send(await get_erlc_error_message(resp))
-                        data = await resp.json()
-
-                if not data:
-                    description = "> There have not been any kill logs in-game."
-                else:
-                    kill_events = []
-                    for entry in data:
-                        ts = entry.get("Timestamp", 0)
-
-                        killer_raw = entry.get("Killer", "Unknown:0")
-                        victim_raw = entry.get("Killed", "Unknown:0")
-
-                        if ":" in killer_raw:
-                            killer_name, killer_id = killer_raw.split(":", 1)
-                        else:
-                            killer_name, killer_id = killer_raw, "0"
-
-                        if ":" in victim_raw:
-                            victim_name, victim_id = victim_raw.split(":", 1)
-                        else:
-                            victim_name, victim_id = victim_raw, "0"
-
-                        killer_link = (
-                            f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)"
-                            if killer_id != "0" else killer_name
-                        )
-                        victim_link = (
-                            f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)"
-                            if victim_id != "0" else victim_name
-                        )
-
-                        kill_events.append(f"{killer_link} killed {victim_link} at <t:{ts}:F>")
-
-                    description = "\n".join(kill_events)
-
-                embed = discord.Embed(
-                    title=f"ER:LC Kill logs ({len(data)})",
-                    description=description,
-                    colour=0x1E77BE,
-                )
-                embed.set_footer(text=f"Running {BOT_VERSION}")
-                embed.set_author(
-                    name=ctx.guild.name,
-                    icon_url=ctx.guild.icon.url if ctx.guild.icon else None,
-                )
-
-                await ctx.send(embed=embed)
-
-        except Exception as e:
-            error_message = await get_erlc_error_message(0, exception=e)
-            await ctx.send(error_message)
-            print(f"[ERROR] .erlc kills failed: {e}")
-
-    elif subcommand == "command":
-        await ctx.send("Please use the `/erlc command` slash command.")
-
+    handler = handlers.get(subcommand)
+    if handler:
+        await handler(ctx)
     else:
-        await ctx.send(
-            f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command."
-        )
+        await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
+
+
+# --- Helper Functions ---
+
+async def handle_erlc_info(ctx):
+    try:
+        async with ctx.typing():
+            embed = await erlc_info_embed(ctx)
+            view = InfoView(ctx, lambda: erlc_info_embed(ctx))
+            await ctx.send(embed=embed, view=view)
+    except Exception as e:
+        await report_erlc_error(ctx, e, ".erlc info")
+
+
+async def handle_erlc_players(ctx):
+    try:
+        async with ctx.typing():
+            server_data = await fetch_api_data(API_BASE)
+            players_data = await fetch_api_data(f"{API_BASE}/players")
+
+            player_count = server_data.get("CurrentPlayers", 0)
+            max_player_count = server_data.get("MaxPlayers", 0)
+
+            if not players_data or player_count == 0:
+                description = "> There are no players in-game."
+            else:
+                description = "\n".join(
+                    [
+                        f'> [{p["Player"].split(":")[0]}](https://www.roblox.com/users/{p["Player"].split(":")[1]}/profile)'
+                        for p in players_data
+                    ]
+                )
+
+            embed = create_embed(
+                ctx,
+                title=f"ER:LC Players ({player_count}/{max_player_count})",
+                description=description,
+            )
+            await ctx.send(embed=embed)
+    except Exception as e:
+        await report_erlc_error(ctx, e, ".erlc players")
+
+
+async def handle_erlc_code(ctx):
+    try:
+        async with ctx.typing():
+            server_data = await fetch_api_data(API_BASE)
+            erlc_code = server_data.get("JoinKey", "Unknown")
+            embed = create_embed(
+                ctx,
+                title="ER:LC Code",
+                description=f"The ER:LC code is `{erlc_code}`."
+            )
+            await ctx.send(embed=embed)
+    except Exception as e:
+        await report_erlc_error(ctx, e, ".erlc code")
+
+
+async def handle_erlc_kills(ctx):
+    try:
+        async with ctx.typing():
+            data = await fetch_api_data(f"{API_BASE}/killlogs")
+            if not data:
+                description = "> There have not been any kill logs in-game."
+            else:
+                description = "\n".join(format_kill_entry(e) for e in data)
+
+            embed = create_embed(
+                ctx,
+                title=f"ER:LC Kill logs ({len(data)})",
+                description=description
+            )
+            await ctx.send(embed=embed)
+    except Exception as e:
+        await report_erlc_error(ctx, e, ".erlc kills")
+
+
+async def handle_erlc_command(ctx):
+    await ctx.send("Please use the `/erlc command` slash command.")
+
+
+# --- Utility Functions ---
+
+async def fetch_api_data(url):
+    async with aiohttp.ClientSession() as session:
+        headers = {"server-key": API_KEY}
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                raise ValueError(f"API request failed: {resp.status}")
+            return await resp.json()
+
+
+def create_embed(ctx, title, description):
+    embed = discord.Embed(title=title, description=description, colour=0x1E77BE)
+    embed.set_author(
+        name=ctx.guild.name,
+        icon_url=ctx.guild.icon.url if ctx.guild.icon else None,
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+
+def format_kill_entry(entry):
+    ts = entry.get("Timestamp", 0)
+    killer_name, killer_id = parse_player(entry.get("Killer", "Unknown:0"))
+    victim_name, victim_id = parse_player(entry.get("Killed", "Unknown:0"))
+    killer_link = f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)" if killer_id != "0" else killer_name
+    victim_link = f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)" if victim_id != "0" else victim_name
+    return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
+
+
+def parse_player(player_raw):
+    if ":" in player_raw:
+        name, id_str = player_raw.split(":", 1)
+    else:
+        name, id_str = player_raw, "0"
+    return name, id_str
+
+
+async def report_erlc_error(ctx, exception, context):
+    error_message = await get_erlc_error_message(0, exception=exception)
+    await ctx.send(error_message)
+    print(f"[ERROR] {context} failed: {exception}")
 
 # ---------------------- commmand info ----------------------
 command_categories = {
@@ -1530,9 +1517,10 @@ async def command_help_prefix(ctx, command: str = None):
         # React to the user's message with the failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
-        except:
-            pass  # Ignore if adding reaction fails
-
+        except (discord.errors.HTTPException, discord.errors.Forbidden) as e:
+            # Optionally log the error
+            print(f"Failed to add reaction: {e}")
+        
         await ctx.send(embed=embed)
         return
 
