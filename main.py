@@ -1153,71 +1153,7 @@ async def erlc_code(interaction: discord.Interaction):
 
 # ---------------------- /erlc kills ----------------------
 
-@erlc_group.command(name="kills", description="Shows the recent ER:LC kill logs.")
-async def erlc_kills(interaction: discord.Interaction):
-    async with aiohttp.ClientSession() as session:
-        headers = {"server-key": API_KEY}
-
-        # Fetch kill logs
-        try:
-            async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
-                if resp.status != 200:
-                    return await interaction.response.send_message(
-                        await get_erlc_error_message(resp), ephemeral=True
-                    )
-                data = await resp.json()
-        except Exception as e:
-            return await interaction.response.send_message(
-                f"{failed_emoji} Failed to fetch kill logs: `{e}`", ephemeral=True
-            )
-
-        if not data:
-            description = "> There have not been any kill logs in-game."
-        else:
-            kill_events = []
-            for entry in data:
-                ts = entry.get("Timestamp", 0)
-
-                # Split "Username:UserId"
-                killer_raw = entry.get("Killer", "Unknown:0")
-                victim_raw = entry.get("Killed", "Unknown:0")
-
-                if ":" in killer_raw:
-                    killer_name, killer_id = killer_raw.split(":", 1)
-                else:
-                    killer_name, killer_id = killer_raw, "0"
-
-                if ":" in victim_raw:
-                    victim_name, victim_id = victim_raw.split(":", 1)
-                else:
-                    victim_name, victim_id = victim_raw, "0"
-
-                # Build Roblox profile links if ID is valid
-                killer_link = (
-                    f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)"
-                    if killer_id != "0" else killer_name
-                )
-                victim_link = (
-                    f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)"
-                    if victim_id != "0" else victim_name
-                )
-
-                kill_events.append(f"{killer_link} killed {victim_link} at <t:{ts}:F>")
-
-            description = "\n".join(kill_events)
-
-        embed = discord.Embed(
-            title=f"ER:LC Kill logs ({len(data)})",
-            description=description,
-            colour=0x1E77BE,
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        embed.set_author(
-            name=interaction.guild.name,
-            icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
-        )
-
-        await interaction.response.send_message(embed=embed)
+# command needs testing 
 
 # ---------------------- /erlc players ----------------------
 
@@ -1641,3 +1577,4 @@ if __name__ == "__main__":
     except Exception as e:
 
         print(f"🔥 Unexpected error occurred: {e}")
+
