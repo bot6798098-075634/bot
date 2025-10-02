@@ -6,6 +6,7 @@ import string
 import datetime
 import traceback
 import json
+from typing import Optional
 import asyncio
 import requests
 import sys
@@ -16,6 +17,7 @@ from discord import Embed
 import re
 import time
 from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from collections import defaultdict, deque
 from discord.ext import commands, tasks
 from discord import app_commands, ui
@@ -29,14 +31,12 @@ import atexit
 import copy
 from dotenv import load_dotenv
 import io
-
+from typing import Union
 
 # ========================= Helpers =========================
 
-# Prefix for commands
 COMMAND_PREFIX = "."
-# version
-BOT_VERSION = "v1.0.0"
+BOT_VERSION = "v1.0.1"
 
 # ========================= Other =========================
 
@@ -87,6 +87,8 @@ discord_group = app_commands.Group(name="discord", description="Discord-related 
 
 # ========================= Bot on_ready =========================
 
+session: aiohttp.ClientSession | None = None  # global session
+
 @bot.event
 async def on_ready():
     try:
@@ -96,9 +98,7 @@ async def on_ready():
 
         # Global sync
         await bot.tree.sync()
-
-        # Guild-specific sync (optional — only if you want instant updates in test guild)
-        await bot.tree.sync(guild=discord.Object(id=1299000909363155024))
+        print("Slash commands synced!")
 
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
@@ -115,6 +115,8 @@ async def on_ready():
         kill_log_task.start()
         modcall_log_task.start()
         team_join_leave_log_task.start()
+        update_vc_status.start()
+        discord_check_task.start()
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
 
@@ -200,17 +202,6 @@ def is_staff_blacklist(): return app_commands.check(lambda i: i.guild and any(r.
 def is_owner():
     async def predicate(interaction: discord.Interaction):
         return interaction.user.id == owner_id
-    return app_commands.check(predicate)
-
-def is_staff_or_owner():
-    async def predicate(interaction: discord.Interaction):
-        # Owner always passes
-        if interaction.user.id == owner_id:
-            return True
-        # Staff role check
-        if interaction.guild and any(r.id == staff_role_id for r in interaction.user.roles):
-            return True
-        return False
     return app_commands.check(predicate)
 
 # --- Helper Function for Uptime ---
@@ -390,26 +381,64 @@ async def servers(interaction: discord.Interaction):
 async def sync(ctx):
     """Owner-only: !sync"""
     if ctx.author.id != OWNER_ID:
-        return await ctx.send("❌ You are not authorized to use this command.")
+        # react with failed emoji
+        try:
+            await ctx.message.add_reaction(failed_emoji_2)
+        except Exception:
+            pass
+        return  # exit command here!
 
     try:
         async with ctx.typing():
             synced = await bot.tree.sync()
-            await ctx.send(f"✅ Synced {len(synced)} application command(s).")
+        # react with tick emoji
+        try:
+            await ctx.message.add_reaction(tick_emoji)
+        except Exception:
+            pass
+
+        await ctx.send(f"✅ Synced {len(synced)} application command(s).")
     except Exception as e:
         await ctx.send(f"❌ Failed to sync commands: `{e}`")
         print(f"[ERROR] !sync failed: {e}")
+
+
+
+@bot.command(name="restart")
+async def restart(ctx):
+    """Owner-only: restart the bot"""
+    if ctx.author.id != owner_id:
+        # react with failed emoji for non-owner
+        try:
+            await ctx.message.add_reaction(failed_emoji)
+        except Exception:
+            pass
+        return
+
+    # react with tick emoji for owner
+    try:
+        await ctx.message.add_reaction(tick_emoji)
+    except Exception:
+        pass
+
+    await ctx.send("♻️ Restarting bot...")
+
+    # Close bot, then restart the script
+    await bot.close()
+
+    # Relaunch the script
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # ========================= ERLC stuff =========================
 
 # ---------------------- ERLC setup ----------------------
 
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-KILL_LOG_CHANNEL_ID = 1381267054354632745
-MODCALL_LOG_CHANNEL_ID = 1381267054354632745
-TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-COMMAND_LOG_CHANNEL_ID = 1381267054354632745
+JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+KILL_LOG_CHANNEL_ID = 1382852078048907274
+MODCALL_LOG_CHANNEL_ID = 1382852078048907274
+TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+COMMAND_LOG_CHANNEL_ID = 1382852078048907274
  
 API_KEY = os.getenv("API_KEY")
 API_BASE = os.getenv("API_BASE")
@@ -793,48 +822,34 @@ async def send_log_embed(channel, title, events):
 
 # ---------------------- error code ----------------------
 
-def get_erlc_error_message(http_status: int, api_code: str = None, exception: Exception = None) -> str:
+# --- Error message function ---
+def get_erlc_error_message(http_status: int, api_code: int = None, exception: Exception = None) -> str:
     """
-    Returns a formatted error message with optional API code or exception details.
+    Returns a formatted PRC error message with optional API code or exception details.
+    Only includes the official error codes.
     """
     messages = {
-        0: f"{error_emoji} **0 – Unknown Error**: An unknown error occurred. Please contact support if this continues.",
-        100: f"{error_emoji} **100 – Continue**: The request headers were received, continue with the request body.",
-        101: f"{error_emoji} **101 – Switching Protocols**: The server is switching protocols.",
-        200: f"{error_emoji} **200 – OK**: The request completed successfully.",
-        201: f"{error_emoji} **201 – Created**: The request succeeded and a new resource was created.",
-        204: f"{error_emoji} **204 – No Content**: Success, but no content returned.",
+        # HTTP errors
         400: f"{error_emoji} **400 – Bad Request**: The request was malformed or invalid.",
-        401: f"{error_emoji} **401 – Unauthorized**: Missing or invalid authentication.",
-        403: f"{error_emoji} **403 – Forbidden**: You do not have permission to access this resource.",
-        404: f"{error_emoji} **404 – Not Found**: The requested resource does not exist.",
-        405: f"{error_emoji} **405 – Method Not Allowed**: That method is not allowed on this endpoint.",
-        408: f"{error_emoji} **408 – Request Timeout**: The server timed out waiting for the request.",
-        409: f"{error_emoji} **409 – Conflict**: The request could not be completed due to a conflict.",
-        410: f"{error_emoji} **410 – Gone**: The resource has been permanently removed.",
-        415: f"{error_emoji} **415 – Unsupported Media Type**: The media type is not supported.",
-        418: f"{error_emoji} **418 – I'm a teapot**: The server refuses to brew coffee in a teapot.",
-        422: f"{error_emoji} **422 – No Players**: No players are currently in the private server.",
-        429: f"{error_emoji} **429 – Too Many Requests**: You are being rate-limited. Slow down.",
-        500: f"{error_emoji} **500 – Internal Server Error**: An internal server error occurred (possibly with Roblox).",
-        501: f"{error_emoji} **501 – Not Implemented**: The server doesn't recognize this method.",
-        502: f"{error_emoji} **502 – Bad Gateway**: Invalid response from an upstream server.",
-        503: f"{error_emoji} **503 – Service Unavailable**: The server is overloaded or under maintenance.",
-        504: f"{error_emoji} **504 – Gateway Timeout**: The upstream server did not respond in time.",
-        1001: f"{error_emoji} **1001 – Communication Error**: Failed to communicate with Roblox or the in-game server.",
-        1002: f"{error_emoji} **1002 – System Error**: A backend error occurred. Try again later.",
-        2000: f"{error_emoji} **2000 – Missing Server Key**: No server-key provided.",
-        2001: f"{error_emoji} **2001 – Bad Server Key Format**: Server-key format is invalid.",
-        2002: f"{error_emoji} **2002 – Invalid Server Key**: The server-key is incorrect or expired.",
-        2003: f"{error_emoji} **2003 – Invalid Global API Key**: The global API key is invalid.",
-        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is banned from using the API.",
-        3001: f"{error_emoji} **3001 – Missing Command**: No command was specified in the request body.",
-        3002: f"{error_emoji} **3002 – Server Offline**: The server is currently offline or empty.",
-        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited. Please wait and try again.",
-        4002: f"{error_emoji} **4002 – Command Restricted**: The command you’re trying to run is restricted.",
-        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you’re trying to send is not allowed.",
-        9998: f"{error_emoji} **9998 – Resource Restricted**: You are trying to access a restricted resource.",
-        9999: f"{error_emoji} **9999 – Module Outdated**: The in-game module is outdated. Please restart the server.",
+        403: f"{error_emoji} **403 – Unauthorized**: You do not have permission to access this resource.",
+        422: f"{error_emoji} **422 – No Players**: The private server has no players in it.",
+
+        # API codes
+        0: f"{error_emoji} **0 – Unknown Error**: Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
+        1001: f"{error_emoji} **1001 – Communication Error**: An error occurred communicating with Roblox / the in-game private server.",
+        1002: f"{error_emoji} **1002 – System Error**: An internal system error occurred.",
+        2000: f"{error_emoji} **2000 – Missing Server Key**: You did not provide a server-key.",
+        2001: f"{error_emoji} **2001 – Bad Server Key Format**: You provided an incorrectly formatted server-key.",
+        2002: f"{error_emoji} **2002 – Invalid Server Key**: You provided an invalid (or expired) server-key.",
+        2003: f"{error_emoji} **2003 – Invalid Global API Key**: You provided an invalid global API key.",
+        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is currently banned from accessing the API.",
+        3001: f"{error_emoji} **3001 – Missing Command**: You did not provide a valid command in the request body.",
+        3002: f"{error_emoji} **3002 – Server Offline**: The server you are attempting to reach is currently offline (has no players).",
+        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited.",
+        4002: f"{error_emoji} **4002 – Command Restricted**: The command you are attempting to run is restricted.",
+        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you're trying to send is prohibited.",
+        9998: f"{error_emoji} **9998 – Resource Restricted**: The resource you are accessing is restricted.",
+        9999: f"{error_emoji} **9999 – Module Outdated**: The module running on the in-game server is out of date, please kick all and try again."
     }
 
     # If exception exists but status is 0, just show exception
@@ -842,12 +857,10 @@ def get_erlc_error_message(http_status: int, api_code: str = None, exception: Ex
         return f"{error_emoji} **Unhandled Exception**:\n`{str(exception)}`"
 
     base_message = messages.get(
-        http_status,
+        api_code if api_code is not None else http_status,
         f"{error_emoji} **{http_status} – Unknown Error**: An unexpected error occurred."
     )
 
-    if api_code:
-        base_message += f"\nAPI Code: `{api_code}`"
     if exception:
         base_message += f"\n`{str(exception)}`"
 
@@ -1153,7 +1166,71 @@ async def erlc_code(interaction: discord.Interaction):
 
 # ---------------------- /erlc kills ----------------------
 
-# command needs testing 
+@erlc_group.command(name="kills", description="Shows the recent ER:LC kill logs.")
+async def erlc_kills(interaction: discord.Interaction):
+    async with aiohttp.ClientSession() as session:
+        headers = {"server-key": API_KEY}
+
+        # Fetch kill logs
+        try:
+            async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
+                if resp.status != 200:
+                    return await interaction.response.send_message(
+                        await get_erlc_error_message(resp), ephemeral=True
+                    )
+                data = await resp.json()
+        except Exception as e:
+            return await interaction.response.send_message(
+                f"{failed_emoji} Failed to fetch kill logs: `{e}`", ephemeral=True
+            )
+
+        if not data:
+            description = "> There have not been any kill logs in-game."
+        else:
+            kill_events = []
+            for entry in data:
+                ts = entry.get("Timestamp", 0)
+
+                # Split "Username:UserId"
+                killer_raw = entry.get("Killer", "Unknown:0")
+                victim_raw = entry.get("Killed", "Unknown:0")
+
+                if ":" in killer_raw:
+                    killer_name, killer_id = killer_raw.split(":", 1)
+                else:
+                    killer_name, killer_id = killer_raw, "0"
+
+                if ":" in victim_raw:
+                    victim_name, victim_id = victim_raw.split(":", 1)
+                else:
+                    victim_name, victim_id = victim_raw, "0"
+
+                # Build Roblox profile links if ID is valid
+                killer_link = (
+                    f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)"
+                    if killer_id != "0" else killer_name
+                )
+                victim_link = (
+                    f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)"
+                    if victim_id != "0" else victim_name
+                )
+
+                kill_events.append(f"{killer_link} killed {victim_link} at <t:{ts}:F>")
+
+            description = "\n".join(kill_events)
+
+        embed = discord.Embed(
+            title=f"ER:LC Kill logs ({len(data)})",
+            description=description,
+            colour=0x1E77BE,
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        embed.set_author(
+            name=interaction.guild.name,
+            icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
+        )
+
+        await interaction.response.send_message(embed=embed)
 
 # ---------------------- /erlc players ----------------------
 
@@ -1219,11 +1296,417 @@ async def discord_cmd(ctx, subcommand: str = None):
     except Exception as e:
         await ctx.send(get_erlc_error_message(0, exception=e))
 
+# --
+
+PLAYERCOUNT_VC_ID = 1381697147895939233  
+QUEUE_VC_ID = 1381697165562347671         
+PLAYERCOUNT_PREFIX = "「🎮」In Game:"
+QUEUE_PREFIX = "「⏳」In Queue:"
+CODE_PREFIX = "「🔑」Code:"
+SERVERNAME_PREFIX = "「🏷️」Server:"
+CODE_VC_ID = 1387116991814439042
+SERVERNAME_VC_ID = 1423033498255626280
+TEAM_KICK_USAGE_LOG_CHANNEL_ID = "1381267054354632745"
+CHECK_CHANNEL_ID = 1381267054354632745
+YOUR_GUILD_ID = 1343179590247645205  
+
+# --- Helper to fetch JSON ---
+async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str):
+    url = f"{API_BASE}{path}"  # API_BASE ends with /server
+    headers = {"Server-Key": server_key}
+    try:
+        async with session.get(url, headers=headers, timeout=10) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            logger.warning(f"⚠️ API returned {resp.status} for {url}")
+    except Exception as e:
+        logger.error(f"❌ Exception fetching {url}: {e}")
+    return None
+
+# --- Loop task: players + queue ---
+@tasks.loop(seconds=60)
+async def update_vc_status():
+    logger.info("🔄 Running VC update loop...")
+    guild = bot.get_guild(1343179590247645205)
+    if not guild:
+        logger.warning("⚠️ Guild not found.")
+        return
+
+    async with aiohttp.ClientSession() as session:
+        # Fetch server info
+        server_info = await fetch_json(session, "", API_KEY)
+        player_count = server_info.get("CurrentPlayers", 0) if server_info else 0
+        max_players = server_info.get("MaxPlayers", 0) if server_info else 0
+
+        # Fetch queue count
+        queue_data = await fetch_json(session, "/queue", API_KEY)
+        queue_count = len(queue_data) if isinstance(queue_data, list) else 0
+
+    # Update VC names only if changed
+    try:
+        if (player_vc := guild.get_channel(PLAYERCOUNT_VC_ID)):
+            new_name = f"{PLAYERCOUNT_PREFIX} {player_count}/{max_players}"
+            if player_vc.name != new_name:
+                await player_vc.edit(name=new_name)
+                await asyncio.sleep(3)
+
+        if (queue_vc := guild.get_channel(QUEUE_VC_ID)):
+            new_name = f"{QUEUE_PREFIX} {queue_count}"
+            if queue_vc.name != new_name:
+                await queue_vc.edit(name=new_name)
+                await asyncio.sleep(3)
+
+        logger.info(
+            f"✅ Updated VC names: Players={player_count}/{max_players}, Queue={queue_count}"
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to update VC names: {e}")
+
+@bot.command(name="joincode")
+async def join_code(ctx):
+    if ctx.author.id != owner_id:
+        # react with failed emoji
+        try:
+            await ctx.message.add_reaction(failed_emoji)
+        except Exception:
+            pass
+        return
+
+    # Fetch join code from API
+    async with aiohttp.ClientSession() as session:
+        server_info = await fetch_json(session, "", API_KEY)
+        if not server_info:
+            await ctx.send("❌ Failed to fetch server info.")
+            return
+
+        join_code = server_info.get("JoinKey", "N/A")
+
+    # Update the join code VC
+    guild = ctx.guild
+    if not guild:
+        return
+
+    code_vc = guild.get_channel(CODE_VC_ID)
+    if code_vc:
+        new_name = f"「🔑」Code: {join_code}"
+        if code_vc.name != new_name:
+            try:
+                await code_vc.edit(name=new_name)
+            except Exception as e:
+                await ctx.send(f"❌ Failed to update VC name: {e}")
+                return
+
+    # react with tick emoji
+    try:
+        await ctx.message.add_reaction(tick_emoji)
+    except Exception:
+        pass
+
+    await ctx.send(f"✅ Join code VC updated to: `{join_code}`")
+
+
+
+
+@bot.command(name="servername")
+async def server_name(ctx):
+    if ctx.author.id != owner_id:
+        # react with failed emoji
+        try:
+            await ctx.message.add_reaction(failed_emoji)
+        except Exception:
+            pass
+        return
+
+    # Fetch server info from API
+    async with aiohttp.ClientSession() as session:
+        server_info = await fetch_json(session, "", API_KEY)
+        if not server_info:
+            await ctx.send("❌ Failed to fetch server info.")
+            return
+
+        server_name_api = server_info.get("Name", "N/A")
+
+    # Update the server name VC
+    guild = ctx.guild
+    if not guild:
+        return
+
+    name_vc = guild.get_channel(SERVERNAME_VC_ID)
+    if name_vc:
+        new_name = f"{SERVERNAME_PREFIX} {server_name_api}"
+        if name_vc.name != new_name:
+            try:
+                await name_vc.edit(name=new_name)
+            except Exception as e:
+                await ctx.send(f"❌ Failed to update VC name: {e}")
+                return
+
+    # react with tick emoji
+    try:
+        await ctx.message.add_reaction(tick_emoji)
+    except Exception:
+        pass
+
+    await ctx.send(f"✅ Server name VC updated to: `{server_name_api}`")
+
+# --
+
+# ---------------------- EMBED HELPERS ----------------------
+def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
+    embed = discord.Embed(
+        title="Discord Check",
+        description=f"{tick_emoji} All players are in the Discord!",
+        color=discord.Color(0x1E77BE),
+    )
+    embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed:
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {"server-key": API_KEY}
+            async with session.get(f"{API_BASE}/players", headers=headers) as res:
+                if res.status == 422:
+                    return all_players_in_discord_embed(guild)
+                if res.status != 200:
+                    raise Exception(await res.text())
+                data = await res.json()
+                players = [p["Player"].split(":")[0] for p in data]
+
+        guild_members = [m.display_name for m in guild.members] + [m.name for m in guild.members]
+        not_in_discord = []
+        for roblox_name in players:
+            pattern = re.compile(rf"\b{re.escape(roblox_name)}\b", re.IGNORECASE)
+            if not any(pattern.search(name) for name in guild_members):
+                not_in_discord.append(roblox_name)
+
+        if not_in_discord:
+            formatted = "\n".join(
+                [f"> [{u}](https://www.roblox.com/users/profile?username={u})" for u in not_in_discord]
+            )
+            embed = discord.Embed(
+                title="Discord Check",
+                description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n{formatted}",
+                color=discord.Color(0x1E77BE),
+            )
+        else:
+            embed = all_players_in_discord_embed(guild)
+
+        embed.set_author(name=guild.name, icon_url=guild.icon.url)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        return embed
+
+    except Exception as e:
+        print(f"Error fetching Discord check: {e}")
+        return None
+
+# ---------------------- BACKGROUND TASK ----------------------
+previous_not_in_discord = set()  # global to track changes
+
+@tasks.loop(seconds=600)
+async def discord_check_task():
+    global previous_not_in_discord
+    guild = bot.get_guild(YOUR_GUILD_ID)
+    if not guild:
+        return
+    channel = guild.get_channel(CHECK_CHANNEL_ID)
+    if not channel:
+        return
+
+    embed = await fetch_discord_check_embed(guild)
+    if embed and "NOT" in embed.description:
+        current_not_in_discord = set(re.findall(r"\[([^\]]+)\]", embed.description))
+        if current_not_in_discord != previous_not_in_discord:
+            await channel.send(embed=embed)
+            previous_not_in_discord = current_not_in_discord
+
+# ---------------------- OPTIONAL EXAMPLE COMMAND ----------------------
+@bot.command(name="discord_embed_example", help="Shows an example of the Discord-check embed")
+async def discord_embed_example(ctx: commands.Context):
+    not_in_discord = ["PlayerOne", "PlayerTwo", "PlayerThree"]
+    formatted = "\n".join([f"> [{u}](https://www.roblox.com/users/profile?username={u})" for u in not_in_discord])
+    embed = discord.Embed(
+        title="Discord Check",
+        description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n{formatted}",
+        color=discord.Color(0x1E77BE),
+    )
+    embed.set_author(name="Example Guild", icon_url="https://example.com/icon.png")
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await ctx.send(embed=embed)
+
+async def send_to_game(command: str):
+    headers = {"Server-Key": API_KEY}
+    data = {"command": command}
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(f"{API_BASE}/command", headers=headers, json=data) as resp:
+                if resp.status != 200:
+                    try:
+                        err_json = await resp.json()
+                        api_code = err_json.get("code")
+                    except Exception:
+                        api_code = None
+
+                    err_msg = get_erlc_error_message(resp.status, api_code)
+                    raise Exception(err_msg)
+        except Exception as e:
+            err_msg = get_erlc_error_message(0, exception=e)
+            raise Exception(err_msg)
+
+
+# === COMMAND LOGGER ===
+async def log_command(user: discord.User, command: str, roblox_user: str, reason: str, success: bool, error: str = None, owner_bypass: bool = False):
+    channel = bot.get_channel(TEAM_KICK_USAGE_LOG_CHANNEL_ID)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(TEAM_KICK_USAGE_LOG_CHANNEL_ID)
+        except Exception:
+            return
+
+    colour = discord.Color.green() if success else discord.Color.red()
+    title = "✅ Command Success" if success else "❌ Command Failed"
+
+    embed = discord.Embed(
+        title=title,
+        description=(f"[{user}](https://discord.com/users/{user.id}) ran `{command}`\n\n"
+                     f"**Target Roblox User:** `{roblox_user}`\n"
+                     f"**Reason:** {reason}\n"
+                     f"**Time:** <t:{int(time.time())}:F>"),
+        colour=colour
+    )
+
+    if owner_bypass:
+        embed.add_field(name="Bypass", value="✅ Owner bypass applied", inline=False)
+
+    if error:
+        embed.add_field(name="Error", value=error, inline=False)
+
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
+
+
+@erlc_group.command(name="teamkick", description="Kick a Roblox player off a team (up to 1m to be done)")
+@app_commands.describe(roblox_user="Roblox username to kick", reason="Reason for team kick")
+async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
+    user = interaction.user
+    has_staff_role = any(r.id == staff_role_id for r in user.roles)
+    is_owner = user.id == owner_id
+
+    # Permission check
+    if not has_staff_role and not is_owner:
+        embed = discord.Embed(
+            title="Permission Denied",
+            description="❌ You do not have permission to use this command.",
+            colour=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Status embed
+    status_embed = discord.Embed(
+        title="⏳ Processing Team Kick",
+        description=f"Processing team kick for `{roblox_user}`...",
+        colour=discord.Color.blurple()
+    )
+    await interaction.response.send_message(embed=status_embed, ephemeral=True)
+
+    try:
+        # Run ERLC in-game commands
+        await send_to_game(f":wanted {roblox_user}")
+        await asyncio.sleep(20)
+
+        await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
+        await asyncio.sleep(20)
+
+        await send_to_game(f":unwanted {roblox_user}")
+
+    except Exception as e:
+        # Error embed
+        err_msg = get_erlc_error_message(0, exception=e)
+        embed = discord.Embed(
+            title="❌ ERLC API Error",
+            description=err_msg,
+            colour=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    # Log only successful kicks
+    await log_command(
+        user=user,
+        command="/erlc teamkick",
+        roblox_user=roblox_user,
+        reason=reason,
+        owner_bypass=is_owner and not has_staff_role,
+        success=True
+    )
+
+    # Success embed
+    embed = discord.Embed(
+        title="✅ Team Kick Successful",
+        description=(
+            f"`{roblox_user}` has been kicked off the team.\n\n"
+            f"**Reason:** {reason}\n"
+            f"**Moderator:** [{user}](https://discord.com/users/{user.id})"
+        ),
+        colour=discord.Color.green()
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await interaction.followup.send(embed=embed, ephemeral=False)
+
+# ----------------------
+
+# --- /erlc bans (SLASH COMMAND) ---
+@erlc_group.command(name="bans", description="List active ER:LC bans (staff only, owner bypass)")
+async def erlc_bans(interaction: discord.Interaction):
+    user = interaction.user
+    has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
+    is_owner = user.id == owner_id
+
+    if not has_staff_role and not is_owner:
+        embed = discord.Embed(
+            title="Permission Denied",
+            description="❌ You do not have permission to use this command.",
+            colour=discord.Colour.red()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    await interaction.response.defer(thinking=True)
+
+    try:
+        bans_data = await fetch_api_data(f"{API_BASE}/bans")
+
+        count = len(bans_data) if bans_data else 0
+        description = "\n".join(f"> {b['Username']}" for b in bans_data) if bans_data else "> No bans found."
+
+        embed = discord.Embed(
+            title=f"ER:LC Bans ({count})",
+            description=description,
+            colour=0x1E77BE
+        )
+        embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+        embed.set_footer(text=interaction.guild.name)
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        error = get_erlc_error_message(0, exception=e)
+        embed = discord.Embed(
+            title="❌ ERLC API Error",
+            description=error,
+            colour=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
 @bot.command(name="erlc")
-async def erlc(ctx, subcommand: str = None):
-    """Prefix command: .erlc <subcommand>"""
+async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: str = None):
+    """Prefix command: !erlc <subcommand> [args]"""
     if not subcommand:
         return await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
 
@@ -1234,16 +1717,145 @@ async def erlc(ctx, subcommand: str = None):
         "code": handle_erlc_code,
         "kills": handle_erlc_kills,
         "command": handle_erlc_command,
+        "teamkick": handle_erlc_teamkick,
+        "bans": handle_erlc_bans,
     }
 
     handler = handlers.get(subcommand)
-    if handler:
-        await handler(ctx)
+    if not handler:
+        return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
+
+    # Only pass extra args to handlers that need them
+    if subcommand == "teamkick":
+        await handler(ctx, roblox_user=roblox_user, reason=reason)
     else:
-        await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
+        await handler(ctx)
 
 
-# --- Helper Functions ---
+
+# --- Handler: .erlc bans ---
+async def handle_erlc_bans(ctx):
+    user = ctx.author
+    has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
+    is_owner = user.id == owner_id
+
+    if not has_staff_role and not is_owner:
+        embed = discord.Embed(
+            title="Permission Denied",
+            description="❌ You do not have permission to use this command.",
+            colour=discord.Color.red()
+        )
+        return await ctx.send(embed=embed)
+
+    async with ctx.typing():
+        try:
+            bans_data = await fetch_api_data(f"{API_BASE}/bans")
+            count = len(bans_data) if bans_data else 0
+            description = "\n".join(f"> {b['Username']}" for b in bans_data) if bans_data else "> No bans found."
+
+            embed = discord.Embed(
+                title=f"ER:LC Bans ({count})",
+                description=description,
+                colour=0x1E77BE
+            )
+
+            guild = ctx.guild
+            if guild:
+                embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
+                embed.set_footer(text=guild.name)
+            else:
+                embed.set_footer(text=f"Running {BOT_VERSION}")
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            error = get_erlc_error_message(0, exception=e)
+            embed = discord.Embed(
+                title="❌ ERLC API Error",
+                description=error,
+                colour=discord.Color.red()
+            )
+            embed.set_footer(text=f"Running {BOT_VERSION}")
+            await ctx.send(embed=embed)
+
+
+# --- Handler: .erlc teamkick ---
+async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
+    if not roblox_user or not reason:
+        await ctx.send(f"❌ Usage: `!erlc teamkick <roblox_user> <reason>`")
+        return
+
+    user = ctx.author
+    has_staff_role = any(r.id == staff_role_id for r in user.roles)
+    is_owner = user.id == owner_id
+
+    if not has_staff_role and not is_owner:
+        try:
+            await ctx.message.add_reaction(error_emoji)
+        except Exception:
+            pass
+        embed = discord.Embed(
+            title="Permission Denied",
+            description=f"{error_emoji} You do not have permission to use this command.",
+            colour=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+        return
+
+    try:
+        await ctx.message.add_reaction(tick_emoji)
+    except Exception:
+        pass
+
+    # Status embed
+    status_embed = discord.Embed(
+        title="⏳ Processing Team Kick",
+        description=f"Processing team kick for `{roblox_user}`...",
+        colour=discord.Color.blurple()
+    )
+    await ctx.send(embed=status_embed)
+
+    try:
+        # Run ERLC in-game commands
+        await send_to_game(f":wanted {roblox_user}")
+        await asyncio.sleep(4)
+        await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
+        await asyncio.sleep(4)
+        await send_to_game(f":unwanted {roblox_user}")
+
+    except Exception as e:
+        err_msg = get_erlc_error_message(0, exception=e)
+        embed = discord.Embed(
+            title="❌ ERLC API Error",
+            description=err_msg,
+            colour=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        await ctx.send(embed=embed)
+        return  # Do NOT log failures
+
+    # Log success only
+    await log_command(
+        user=user,
+        command="!erlc teamkick",
+        roblox_user=roblox_user,
+        reason=reason,
+        success=True,
+        owner_bypass=is_owner and not has_staff_role
+    )
+
+    # Success embed
+    embed = discord.Embed(
+        title="✅ Team Kick Successful",
+        description=(
+            f"`{roblox_user}` has been kicked off the team.\n\n"
+            f"**Reason:** {reason}\n"
+            f"**Moderator:** [{user}](https://discord.com/users/{user.id})"
+        ),
+        colour=discord.Color.green()
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await ctx.send(embed=embed)
 
 async def handle_erlc_info(ctx):
     try:
@@ -1366,6 +1978,7 @@ async def report_erlc_error(ctx, exception, context):
     print(f"[ERROR] {context} failed: {exception}")
 
 # ---------------------- commmand info ----------------------
+
 command_categories = {
     "🛠️ General": [
         ("ping", "Check if the bot is online"),
@@ -1384,13 +1997,18 @@ command_categories = {
         ("erlc players", "Show players in game"),
         ("discord check", "Check whos in the discord and whos not"),
         ("erlc info", "Give erlc info from the server"),
-        ("erlc code", "Show the erlc code")
+        ("erlc code", "Show the erlc code"),
+        ("erlc bans", "Vuew all baned players from in-game."),
+        ("erlc teamkick", "kick a player off team.")
     ],
     "🔒 Channel Management": [
         ("N/A", "N/A")
     ],
-    "💼 Other": [
-        ("N/A", "N/A")
+    "💼 Owner Commands": [
+        ("joincode", "Update join code VC."),
+        ("servername", "Update server name VC."),
+        ("sync", "Sync all / commands.")
+
     ]
 }
 
@@ -1519,9 +2137,24 @@ command_details = {
     },
         "sync": {
         "description": "Sync all commands.",
-        "useage": f"`{COMMAND_PREFIX}sync"
+        "useage": f"`{COMMAND_PREFIX}sync`"
+    },
+        "joincode": {
+        "description": "Sync the VC channel that has the join code on it.",
+        "useage": f"`{COMMAND_PREFIX}joincode`"
+    },
+        "servername": {
+        "description": "Sync the VC channel that has the server name on it.",
+        "useage": f"`{COMMAND_PREFIX}servername`"
+    },
+        "erlc bans": {
+        "description": "View all baned players in-game.",
+        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+    },
+        "erlc teamkick": {
+        "description": "Kick a player from any team that needs you not to be wanted.",
+        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
     }
-    # Add all other commands here in the same structure
 }
 
 # ---------------------- helper for help command ----------------------
@@ -1575,6 +2208,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
-
         print(f"🔥 Unexpected error occurred: {e}")
-
