@@ -35,12 +35,8 @@ from typing import Union
 
 # ========================= Helpers =========================
 
-# Prefix for commands
 COMMAND_PREFIX = "."
-# version
-BOT_VERSION = "v1.0.0"
-failed_emoji_2 = "❌"
-tick_emoji_2 = "✅"
+BOT_VERSION = "v1.0.1"
 
 # ========================= Other =========================
 
@@ -397,7 +393,7 @@ async def sync(ctx):
             synced = await bot.tree.sync()
         # react with tick emoji
         try:
-            await ctx.message.add_reaction(tick_emoji_2)
+            await ctx.message.add_reaction(tick_emoji)
         except Exception:
             pass
 
@@ -414,14 +410,14 @@ async def restart(ctx):
     if ctx.author.id != owner_id:
         # react with failed emoji for non-owner
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
         except Exception:
             pass
         return
 
     # react with tick emoji for owner
     try:
-        await ctx.message.add_reaction(tick_emoji_2)
+        await ctx.message.add_reaction(tick_emoji)
     except Exception:
         pass
 
@@ -1300,226 +1296,7 @@ async def discord_cmd(ctx, subcommand: str = None):
     except Exception as e:
         await ctx.send(get_erlc_error_message(0, exception=e))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# --- API endpoints ---
-API_ENDPOINTS = {
-    "server": f"{API_BASE}",
-    "players": f"{API_BASE}/players",
-    "joinlogs": f"{API_BASE}/joinlogs",
-    "queue": f"{API_BASE}/queue",
-    "killlogs": f"{API_BASE}/killlogs",
-    "commandlogs": f"{API_BASE}/commandlogs",
-    "modcalls": f"{API_BASE}/modcalls",
-    "bans": f"{API_BASE}/bans",
-    "vehicles": f"{API_BASE}/vehicles",
-    "staff": f"{API_BASE}/staff"
-}
-
-# --- Helper: fetch all server info ---
-async def get_server_info():
-    headers = {"server-key": API_KEY, "Accept": "*/*"}
-    async with aiohttp.ClientSession() as session:
-        results = {}
-        for key, url in API_ENDPOINTS.items():
-            async with session.get(url, headers=headers) as res:
-                if res.status != 200:
-                    results[key] = None
-                    continue
-                results[key] = await res.json()
-
-    # Extract core info
-    server_data = results.get("server") or {}
-    players_data = results.get("players") or []
-    queue_data = results.get("queue") or []
-
-    info = {
-        "server_name": server_data.get("Name"),
-        "status": server_data.get("Status") or "offline",
-        "max_players": server_data.get("MaxPlayers"),
-        "players_online": len(players_data),
-        "queue_count": len(queue_data),
-        "raw": results
-    }
-
-    return info
-
-# --- Full server info command ---
-@bot.tree.command(name="serverfullinfo", description="Show full server info including all endpoints")
-async def serverfullinfo(interaction: discord.Interaction):
-    await interaction.response.defer()  # Prevent 404 for long processing
-    try:
-        data = await get_server_info()
-        server_raw = data['raw'].get('server') or {}
-
-        msg = (
-            f"🔹 **Server Name:** {data['server_name']}\n"
-            f"💻 **Status:** {data['status']}\n"
-            f"🆔 **Join Key:** {server_raw.get('JoinKey', 'N/A')}\n"
-            f"👥 **Players Online:** {data['players_online']}/{data['max_players']}\n"
-            f"⏳ **Queue:** {data['queue_count']}\n\n"
-            f"**Sample Players:**\n"
-        )
-
-        players = data['raw'].get('players') or []
-        for p in players[:5]:
-            msg += f"- {p.get('Player')} | {p.get('Permission')} | {p.get('Callsign')} | {p.get('Team')}\n"
-
-        joinlogs = data['raw'].get('joinlogs') or []
-        if joinlogs:
-            msg += "\n**Sample Join Logs:**\n"
-            for j in joinlogs[:5]:
-                msg += f"- {j.get('Player')} | Joined: {j.get('Join')} | Timestamp: {j.get('Timestamp')}\n"
-
-        killlogs = data['raw'].get('killlogs') or []
-        if killlogs:
-            msg += "\n**Sample Kill Logs:**\n"
-            for k in killlogs[:5]:
-                msg += f"- {k.get('Killer')} killed {k.get('Killed')} at {k.get('Timestamp')}\n"
-
-        commandlogs = data['raw'].get('commandlogs') or []
-        if commandlogs:
-            msg += "\n**Sample Command Logs:**\n"
-            for c in commandlogs[:5]:
-                msg += f"- {c.get('Player')} executed {c.get('Command')} at {c.get('Timestamp')}\n"
-
-        modcalls = data['raw'].get('modcalls') or []
-        if modcalls:
-            msg += "\n**Sample Moderator Calls:**\n"
-            for m in modcalls[:5]:
-                msg += f"- Caller: {m.get('Caller')}, Moderator: {m.get('Moderator')}, Timestamp: {m.get('Timestamp')}\n"
-
-        bans = data['raw'].get('bans') or {}
-        if bans:
-            msg += f"\n**Bans:** {bans.get('PlayerId', 'None')}\n"
-
-        vehicles = data['raw'].get('vehicles') or []
-        if vehicles:
-            msg += "\n**Sample Vehicles:**\n"
-            for v in vehicles[:5]:
-                msg += f"- {v.get('Name')} owned by {v.get('Owner')} | Texture: {v.get('Texture')}\n"
-
-        staff = data['raw'].get('staff') or {}
-        if staff:
-            msg += "\n**Staff:**\n"
-            msg += f"CoOwners: {staff.get('CoOwners', [])}\n"
-            msg += f"Admins: {staff.get('Admins', {})}\n"
-            msg += f"Mods: {staff.get('Mods', {})}\n"
-
-        # Truncate message to avoid Discord 2000 char limit
-        if len(msg) > 1990:
-            msg = msg[:1990] + "\n…"
-
-        await interaction.followup.send(msg)
-
-    except Exception as e:
-        await interaction.followup.send("❌ Failed to fetch full server info.")
-        print(e)
-
-# --- Full server info command ---
-@bot.tree.command(name="test", description="Show full server info including all endpoints")
-async def test(interaction: discord.Interaction):
-    await interaction.response.defer()  # Prevent 404 for long processing
-    try:
-        data = await get_server_info()
-        server_raw = data['raw'].get('server') or {}
-
-        msg = (
-            f"🔹 **Server Name:** {data['server_name']}\n"
-            f"💻 **Status:** {data['status']}\n"
-            f"🆔 **Join Key:** {server_raw.get('JoinKey', 'N/A')}\n"
-            f"👥 **Players Online:** {data['players_online']}/{data['max_players']}\n"
-            f"⏳ **Queue:** {data['queue_count']}\n\n"
-            f"**Sample Players:**\n"
-        )
-
-        players = data['raw'].get('players') or []
-        for p in players[:5]:
-            msg += f"- {p.get('Player')} | {p.get('Permission')} | {p.get('Callsign')} | {p.get('Team')}\n"
-
-        joinlogs = data['raw'].get('joinlogs') or []
-        if joinlogs:
-            msg += "\n**Sample Join Logs:**\n"
-            for j in joinlogs[:5]:
-                msg += f"- {j.get('Player')} | Joined: {j.get('Join')} | Timestamp: {j.get('Timestamp')}\n"
-
-        killlogs = data['raw'].get('killlogs') or []
-        if killlogs:
-            msg += "\n**Sample Kill Logs:**\n"
-            for k in killlogs[:5]:
-                msg += f"- {k.get('Killer')} killed {k.get('Killed')} at {k.get('Timestamp')}\n"
-
-        commandlogs = data['raw'].get('commandlogs') or []
-        if commandlogs:
-            msg += "\n**Sample Command Logs:**\n"
-            for c in commandlogs[:5]:
-                msg += f"- {c.get('Player')} executed {c.get('Command')} at {c.get('Timestamp')}\n"
-
-        modcalls = data['raw'].get('modcalls') or []
-        if modcalls:
-            msg += "\n**Sample Moderator Calls:**\n"
-            for m in modcalls[:5]:
-                msg += f"- Caller: {m.get('Caller')}, Moderator: {m.get('Moderator')}, Timestamp: {m.get('Timestamp')}\n"
-
-        bans = data['raw'].get('bans') or {}
-        if bans:
-            msg += f"\n**Bans:** {bans.get('PlayerId', 'None')}\n"
-
-        vehicles = data['raw'].get('vehicles') or []
-        if vehicles:
-            msg += "\n**Sample Vehicles:**\n"
-            for v in vehicles[:5]:
-                msg += f"- {v.get('Name')} owned by {v.get('Owner')} | Texture: {v.get('Texture')}\n"
-
-        staff = data['raw'].get('staff') or {}
-        if staff:
-            msg += "\n**Staff:**\n"
-            msg += f"CoOwners: {staff.get('CoOwners', [])}\n"
-            msg += f"Admins: {staff.get('Admins', {})}\n"
-            msg += f"Mods: {staff.get('Mods', {})}\n"
-
-        # Truncate message to avoid Discord 2000 char limit
-        if len(msg) > 1990:
-            msg = msg[:1990] + "\n…"
-
-        await interaction.followup.send(msg)
-
-    except Exception as e:
-        await interaction.followup.send("❌ Failed to fetch full server info.")
-        print(e)
-
+# --
 
 PLAYERCOUNT_VC_ID = 1381697147895939233  
 QUEUE_VC_ID = 1381697165562347671         
@@ -1529,6 +1306,9 @@ CODE_PREFIX = "「🔑」Code:"
 SERVERNAME_PREFIX = "「🏷️」Server:"
 CODE_VC_ID = 1387116991814439042
 SERVERNAME_VC_ID = 1423033498255626280
+TEAM_KICK_USAGE_LOG_CHANNEL_ID = "1381267054354632745"
+CHECK_CHANNEL_ID = 1381267054354632745
+YOUR_GUILD_ID = 1343179590247645205  
 
 # --- Helper to fetch JSON ---
 async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str):
@@ -1587,7 +1367,7 @@ async def join_code(ctx):
     if ctx.author.id != owner_id:
         # react with failed emoji
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
         except Exception:
             pass
         return
@@ -1618,7 +1398,7 @@ async def join_code(ctx):
 
     # react with tick emoji
     try:
-        await ctx.message.add_reaction(tick_emoji_2)
+        await ctx.message.add_reaction(tick_emoji)
     except Exception:
         pass
 
@@ -1632,7 +1412,7 @@ async def server_name(ctx):
     if ctx.author.id != owner_id:
         # react with failed emoji
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
         except Exception:
             pass
         return
@@ -1663,21 +1443,13 @@ async def server_name(ctx):
 
     # react with tick emoji
     try:
-        await ctx.message.add_reaction(tick_emoji_2)
+        await ctx.message.add_reaction(tick_emoji)
     except Exception:
         pass
 
     await ctx.send(f"✅ Server name VC updated to: `{server_name_api}`")
 
-
-
-
-
-
-
-
-CHECK_CHANNEL_ID = 1343300143830798336
-YOUR_GUILD_ID = 1343179590247645205  # Replace with your guild ID
+# --
 
 # ---------------------- EMBED HELPERS ----------------------
 def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
@@ -1762,17 +1534,6 @@ async def discord_embed_example(ctx: commands.Context):
     embed.set_author(name="Example Guild", icon_url="https://example.com/icon.png")
     embed.set_footer(text=f"Running {BOT_VERSION}")
     await ctx.send(embed=embed)
-
-
-
-
-
-
-
-
-
-TEAM_KICK_USAGE_LOG_CHANNEL_ID = "1382852078048907274"
-
 
 async def send_to_game(command: str):
     headers = {"Server-Key": API_KEY}
@@ -1896,8 +1657,7 @@ async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: s
     embed.set_footer(text=f"Running {BOT_VERSION}")
     await interaction.followup.send(embed=embed, ephemeral=False)
 
-
-
+# ----------------------
 
 # --- /erlc bans (SLASH COMMAND) ---
 @erlc_group.command(name="bans", description="List active ER:LC bans (staff only, owner bypass)")
@@ -1941,137 +1701,6 @@ async def erlc_bans(interaction: discord.Interaction):
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
@@ -2348,9 +1977,8 @@ async def report_erlc_error(ctx, exception, context):
     await ctx.send(error_message)
     print(f"[ERROR] {context} failed: {exception}")
 
-
-
 # ---------------------- commmand info ----------------------
+
 command_categories = {
     "🛠️ General": [
         ("ping", "Check if the bot is online"),
@@ -2369,13 +1997,18 @@ command_categories = {
         ("erlc players", "Show players in game"),
         ("discord check", "Check whos in the discord and whos not"),
         ("erlc info", "Give erlc info from the server"),
-        ("erlc code", "Show the erlc code")
+        ("erlc code", "Show the erlc code"),
+        ("erlc bans", "Vuew all baned players from in-game."),
+        ("erlc teamkick", "kick a player off team.")
     ],
     "🔒 Channel Management": [
         ("N/A", "N/A")
     ],
-    "💼 Other": [
-        ("N/A", "N/A")
+    "💼 Owner Commands": [
+        ("joincode", "Update join code VC."),
+        ("servername", "Update server name VC."),
+        ("sync", "Sync all / commands.")
+
     ]
 }
 
@@ -2504,9 +2137,24 @@ command_details = {
     },
         "sync": {
         "description": "Sync all commands.",
-        "useage": f"`{COMMAND_PREFIX}sync"
+        "useage": f"`{COMMAND_PREFIX}sync`"
+    },
+        "joincode": {
+        "description": "Sync the VC channel that has the join code on it.",
+        "useage": f"`{COMMAND_PREFIX}joincode`"
+    },
+        "servername": {
+        "description": "Sync the VC channel that has the server name on it.",
+        "useage": f"`{COMMAND_PREFIX}servername`"
+    },
+        "erlc bans": {
+        "description": "View all baned players in-game.",
+        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+    },
+        "erlc teamkick": {
+        "description": "Kick a player from any team that needs you not to be wanted.",
+        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
     }
-    # Add all other commands here in the same structure
 }
 
 # ---------------------- helper for help command ----------------------
@@ -2545,7 +2193,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN_BATA")
+        token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
