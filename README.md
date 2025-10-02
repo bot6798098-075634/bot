@@ -5,6 +5,7 @@
 <h1 align="center">ERLC Discord Bot</h1>
 
 ### ER:LC PRC Discord Bot
+## Security issues after updates are being or been fixed
 
 A Discord bot integrating with the **PRC API** to enhance your Emergency Response: Liberty County server experience.
 
