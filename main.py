@@ -1352,7 +1352,7 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
     return None
 
 # --- Loop task: players + queue ---
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=140)
 async def update_vc_status():
     logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
@@ -1857,9 +1857,9 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
     try:
         # Run ERLC in-game commands
         await send_to_game(f":wanted {roblox_user}")
-        await asyncio.sleep(4)
+        await asyncio.sleep(20)
         await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
-        await asyncio.sleep(4)
+        await asyncio.sleep(20)
         await send_to_game(f":unwanted {roblox_user}")
     except Exception as e:  # keep generic here because ERLC can fail in multiple ways
         err_msg = get_erlc_error_message(0, exception=e)
@@ -2249,10 +2249,3 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
-
-
-
-
-
-
-
