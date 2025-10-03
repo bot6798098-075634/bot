@@ -407,6 +407,13 @@ async def sync(ctx):
 # --
 
 
+import os
+import sys
+import shutil
+import logging
+
+log = logging.getLogger(__name__)
+
 @bot.command(name="restart")
 async def restart(ctx):
     """Owner-only: restart the bot"""
@@ -428,6 +435,7 @@ async def restart(ctx):
 
     # --- Validate python executable (avoid untrusted paths) ---
     python_path = sys.executable  # usually an absolute path
+
     # If sys.executable is missing or not executable, try finding python via PATH
     if not (python_path and os.path.isabs(python_path) and os.access(python_path, os.X_OK)):
         python_path = shutil.which("python3") or shutil.which("python")
@@ -435,7 +443,7 @@ async def restart(ctx):
     if not python_path:
         # Fail early with clear message rather than blindly invoking execv
         await ctx.send("❌ Could not locate a Python executable to restart this process.")
-        log.error("restart failed: could not locate python executable (sys.executable=%r)", sys.executable)
+        log.error("Restart failed: could not locate python executable (sys.executable=%r)", sys.executable)
         return
 
     # Build safe argv list (do not use shell)
@@ -449,9 +457,9 @@ async def restart(ctx):
         log.exception("Error while closing bot before restart: %s", e)
 
     # Exec the new interpreter. This does not invoke a shell and uses absolute path.
-    # This is intended behaviour and not using a shell avoids shell injection risks.
+    # This is intentional and safe.  # nosec: B606
     try:
-        os.execv(python_path, argv)
+        os.execv(python_path, argv)  # nosec: B606
     except OSError as e:
         # Exec failed — inform operator and log full traceback
         await ctx.send(f"❌ Failed to restart: `{e}`")
@@ -2249,6 +2257,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
