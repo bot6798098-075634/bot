@@ -1424,6 +1424,25 @@ async def discord_check_task():
             await channel.send(embed=embed)
             previous_not_in_discord = current_not_in_discord
 
+async def send_to_game(command: str):
+    headers = {"Server-Key": API_KEY}
+    data = {"command": command}
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(f"{API_BASE}/command", headers=headers, json=data) as resp:
+                if resp.status != 200:
+                    try:
+                        err_json = await resp.json()
+                        api_code = err_json.get("code")
+                    except Exception:
+                        api_code = None
+
+                    err_msg = get_erlc_error_message(resp.status, api_code)
+                    raise Exception(err_msg)
+        except Exception as e:
+            err_msg = get_erlc_error_message(0, exception=e)
+            raise Exception(err_msg)
 
 async def run_teamkick_sequence(roblox_user: str, reason: str):
     """Run the in-game commands to perform a teamkick in ERLC."""
