@@ -17,9 +17,9 @@ A Discord bot integrating with the **PRC API** to enhance your Emergency Respons
 
 ### Features
 
-- Real-time player join and leave notifications  
-- Slash commands for server info and control  
-- Integration with the PRC API 
+- Real-time player join and leave notifications.
+- Slash commands. 
+- Integration with the PRC API.
 
 
 ---
@@ -28,3 +28,4 @@ A Discord bot integrating with the **PRC API** to enhance your Emergency Respons
 </p>
 
 [![CodeFactor](https://www.codefactor.io/repository/github/bot6798098-075634/bot/badge)](https://www.codefactor.io/repository/github/bot6798098-075634/bot)
+![MIT License](https://img.shields.io/badge/License-MIT-green.svg)
