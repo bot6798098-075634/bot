@@ -1424,130 +1424,18 @@ async def discord_check_task():
             await channel.send(embed=embed)
             previous_not_in_discord = current_not_in_discord
 
-# ---------------------- OPTIONAL EXAMPLE COMMAND ----------------------
-@bot.command(name="discord_embed_example", help="Shows an example of the Discord-check embed")
-async def discord_embed_example(ctx: commands.Context):
-    not_in_discord = ["PlayerOne", "PlayerTwo", "PlayerThree"]
-    formatted = "\n".join([f"> [{u}](https://www.roblox.com/users/profile?username={u})" for u in not_in_discord])
-    embed = discord.Embed(
-        title="Discord Check",
-        description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n{formatted}",
-        color=discord.Color(0x1E77BE),
-    )
-    embed.set_author(name="Example Guild", icon_url="https://example.com/icon.png")
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    await ctx.send(embed=embed)
 
-async def send_to_game(command: str):
-    headers = {"Server-Key": API_KEY}
-    data = {"command": command}
-
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(f"{API_BASE}/command", headers=headers, json=data) as resp:
-                if resp.status != 200:
-                    try:
-                        err_json = await resp.json()
-                        api_code = err_json.get("code")
-                    except Exception:
-                        api_code = None
-
-                    err_msg = get_erlc_error_message(resp.status, api_code)
-                    raise Exception(err_msg)
-        except Exception as e:
-            err_msg = get_erlc_error_message(0, exception=e)
-            raise Exception(err_msg)
+async def run_teamkick_sequence(roblox_user: str, reason: str):
+    """Run the in-game commands to perform a teamkick in ERLC."""
+    await send_to_game(f":wanted {roblox_user}")
+    await asyncio.sleep(20)
+    await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
+    await asyncio.sleep(20)
+    await send_to_game(f":unwanted {roblox_user}")
 
 
-# === COMMAND LOGGER ===
-async def log_command(user: discord.User, command: str, roblox_user: str, reason: str, success: bool, error: str = None, owner_bypass: bool = False):
-    channel = bot.get_channel(TEAM_KICK_USAGE_LOG_CHANNEL_ID)
-    if not channel:
-        try:
-            channel = await bot.fetch_channel(TEAM_KICK_USAGE_LOG_CHANNEL_ID)
-        except Exception:
-            return
-
-    colour = discord.Color.green() if success else discord.Color.red()
-    title = "✅ Command Success" if success else "❌ Command Failed"
-
-    embed = discord.Embed(
-        title=title,
-        description=(f"[{user}](https://discord.com/users/{user.id}) ran `{command}`\n\n"
-                     f"**Target Roblox User:** `{roblox_user}`\n"
-                     f"**Reason:** {reason}\n"
-                     f"**Time:** <t:{int(time.time())}:F>"),
-        colour=colour
-    )
-
-    if owner_bypass:
-        embed.add_field(name="Bypass", value="✅ Owner bypass applied", inline=False)
-
-    if error:
-        embed.add_field(name="Error", value=error, inline=False)
-
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    await channel.send(embed=embed)
-
-
-@erlc_group.command(name="teamkick", description="Kick a Roblox player off a team (up to 1m to be done)")
-@app_commands.describe(roblox_user="Roblox username to kick", reason="Reason for team kick")
-async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
-    user = interaction.user
-    has_staff_role = any(r.id == staff_role_id for r in user.roles)
-    is_owner = user.id == owner_id
-
-    # Permission check
-    if not has_staff_role and not is_owner:
-        embed = discord.Embed(
-            title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
-            colour=discord.Color.red()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    # Status embed
-    status_embed = discord.Embed(
-        title="⏳ Processing Team Kick",
-        description=f"Processing team kick for `{roblox_user}`...",
-        colour=discord.Color.blurple()
-    )
-    await interaction.response.send_message(embed=status_embed, ephemeral=True)
-
-    try:
-        # Run ERLC in-game commands
-        await send_to_game(f":wanted {roblox_user}")
-        await asyncio.sleep(20)
-
-        await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
-        await asyncio.sleep(20)
-
-        await send_to_game(f":unwanted {roblox_user}")
-
-    except Exception as e:
-        # Error embed
-        err_msg = get_erlc_error_message(0, exception=e)
-        embed = discord.Embed(
-            title="❌ ERLC API Error",
-            description=err_msg,
-            colour=discord.Color.red()
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        return
-
-    # Log only successful kicks
-    await log_command(
-        user=user,
-        command="/erlc teamkick",
-        roblox_user=roblox_user,
-        reason=reason,
-        owner_bypass=is_owner and not has_staff_role,
-        success=True
-    )
-
-    # Success embed
+def build_teamkick_success_embed(user: discord.User, roblox_user: str, reason: str) -> discord.Embed:
+    """Build success embed for both prefix and slash teamkick commands."""
     embed = discord.Embed(
         title="✅ Team Kick Successful",
         description=(
@@ -1558,7 +1446,66 @@ async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: s
         colour=discord.Color.green()
     )
     embed.set_footer(text=f"Running {BOT_VERSION}")
-    await interaction.followup.send(embed=embed, ephemeral=False)
+    return embed
+
+
+def build_teamkick_error_embed(e: Exception) -> discord.Embed:
+    """Build error embed for failed teamkick attempts."""
+    err_msg = get_erlc_error_message(0, exception=e)
+    embed = discord.Embed(
+        title="❌ ERLC API Error",
+        description=err_msg,
+        colour=discord.Color.red()
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+
+def build_permission_denied_embed(prefix=False) -> discord.Embed:
+    """Permission denied embed, prefix/slash variants."""
+    emoji = error_emoji if prefix else "❌"
+    return discord.Embed(
+        title="Permission Denied",
+        description=f"{emoji} You do not have permission to use this command.",
+        colour=discord.Color.red()
+    )
+
+
+def build_status_embed(roblox_user: str) -> discord.Embed:
+    """Status embed while processing the teamkick."""
+    return discord.Embed(
+        title="⏳ Processing Team Kick",
+        description=f"Processing team kick for `{roblox_user}`...",
+        colour=discord.Color.blurple()
+    )
+
+@erlc_group.command(name="teamkick", description="Kick a Roblox player off a team (up to 1m to be done)")
+@app_commands.describe(roblox_user="Roblox username to kick", reason="Reason for team kick")
+async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
+    user = interaction.user
+    has_staff_role = any(r.id == staff_role_id for r in user.roles)
+    is_owner = user.id == owner_id
+
+    if not has_staff_role and not is_owner:
+        return await interaction.response.send_message(embed=build_permission_denied_embed(), ephemeral=True)
+
+    await interaction.response.send_message(embed=build_status_embed(roblox_user), ephemeral=True)
+
+    try:
+        await run_teamkick_sequence(roblox_user, reason)
+    except Exception as e:
+        return await interaction.followup.send(embed=build_teamkick_error_embed(e), ephemeral=True)
+
+    await log_command(
+        user=user,
+        command="/erlc teamkick",
+        roblox_user=roblox_user,
+        reason=reason,
+        owner_bypass=is_owner and not has_staff_role,
+        success=True
+    )
+
+    await interaction.followup.send(embed=build_teamkick_success_embed(user, roblox_user, reason))
 
 # ----------------------
 
@@ -1683,10 +1630,9 @@ async def handle_erlc_bans(ctx):
 
 
 # --- Handler: .erlc teamkick ---
-async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
+async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
-        await ctx.send(f"❌ Usage: `!erlc teamkick <roblox_user> <reason>`")
-        return
+        return await ctx.send("❌ Usage: `!erlc teamkick <roblox_user> <reason>`")
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
@@ -1695,49 +1641,22 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
     if not has_staff_role and not is_owner:
         try:
             await ctx.message.add_reaction(error_emoji)
-        except discord.HTTPException as e:
-            print(f"[WARN] Failed to react with error_emoji: {e}")
-
-        embed = discord.Embed(
-            title="Permission Denied",
-            description=f"{error_emoji} You do not have permission to use this command.",
-            colour=discord.Color.red()
-        )
-        await ctx.send(embed=embed)
-        return
+        except discord.HTTPException:
+            pass
+        return await ctx.send(embed=build_permission_denied_embed(prefix=True))
 
     try:
         await ctx.message.add_reaction(tick_emoji)
-    except discord.HTTPException as e:
-        print(f"[WARN] Failed to react with tick_emoji: {e}")
+    except discord.HTTPException:
+        pass
 
-    # Status embed
-    status_embed = discord.Embed(
-        title="⏳ Processing Team Kick",
-        description=f"Processing team kick for `{roblox_user}`...",
-        colour=discord.Color.blurple()
-    )
-    await ctx.send(embed=status_embed)
+    await ctx.send(embed=build_status_embed(roblox_user))
 
     try:
-        # Run ERLC in-game commands
-        await send_to_game(f":wanted {roblox_user}")
-        await asyncio.sleep(20)
-        await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
-        await asyncio.sleep(20)
-        await send_to_game(f":unwanted {roblox_user}")
-    except Exception as e:  # keep generic here because ERLC can fail in multiple ways
-        err_msg = get_erlc_error_message(0, exception=e)
-        embed = discord.Embed(
-            title="❌ ERLC API Error",
-            description=err_msg,
-            colour=discord.Color.red()
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await ctx.send(embed=embed)
-        return  # do NOT log failures
+        await run_teamkick_sequence(roblox_user, reason)
+    except Exception as e:
+        return await ctx.send(embed=build_teamkick_error_embed(e))
 
-    # Log success only
     await log_command(
         user=user,
         command="!erlc teamkick",
@@ -1747,18 +1666,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
         owner_bypass=is_owner and not has_staff_role
     )
 
-    # Success embed
-    embed = discord.Embed(
-        title="✅ Team Kick Successful",
-        description=(
-            f"`{roblox_user}` has been kicked off the team.\n\n"
-            f"**Reason:** {reason}\n"
-            f"**Moderator:** [{user}](https://discord.com/users/{user.id})"
-        ),
-        colour=discord.Color.green()
-    )
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    await ctx.send(embed=embed)
+    await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason))
 
 
 # --- Handler: .erlc info ---
