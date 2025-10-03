@@ -384,8 +384,8 @@ async def sync(ctx):
         # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji_2)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with failed_emoji_2: {e}")
         return  # exit command here!
 
     try:
@@ -394,40 +394,40 @@ async def sync(ctx):
         # react with tick emoji
         try:
             await ctx.message.add_reaction(tick_emoji)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with tick_emoji: {e}")
 
         await ctx.send(f"✅ Synced {len(synced)} application command(s).")
     except Exception as e:
         await ctx.send(f"❌ Failed to sync commands: `{e}`")
         print(f"[ERROR] !sync failed: {e}")
 
+# --
 
 
 @bot.command(name="restart")
 async def restart(ctx):
     """Owner-only: restart the bot"""
-    if ctx.author.id != owner_id:
+    if ctx.author.id != OWNER_ID:
         # react with failed emoji for non-owner
         try:
             await ctx.message.add_reaction(failed_emoji)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with failed_emoji: {e}")
         return
 
     # react with tick emoji for owner
     try:
         await ctx.message.add_reaction(tick_emoji)
-    except Exception:
-        pass
+    except discord.HTTPException as e:
+        print(f"[WARN] Failed to react with tick_emoji: {e}")
 
     await ctx.send("♻️ Restarting bot...")
 
     # Close bot, then restart the script
     await bot.close()
+    os.execv(sys.executable, [sys.executable] + sys.argv)  # no shell=True → safe
 
-    # Relaunch the script
-    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # ========================= ERLC stuff =========================
 
@@ -1362,14 +1362,17 @@ async def update_vc_status():
     except Exception as e:
         logger.error(f"❌ Failed to update VC names: {e}")
 
+# -
+
 @bot.command(name="joincode")
 async def join_code(ctx):
-    if ctx.author.id != owner_id:
+    """Owner-only: update join code VC"""
+    if ctx.author.id != OWNER_ID:
         # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with failed_emoji: {e}")
         return
 
     # Fetch join code from API
@@ -1378,7 +1381,6 @@ async def join_code(ctx):
         if not server_info:
             await ctx.send("❌ Failed to fetch server info.")
             return
-
         join_code = server_info.get("JoinKey", "N/A")
 
     # Update the join code VC
@@ -1392,29 +1394,34 @@ async def join_code(ctx):
         if code_vc.name != new_name:
             try:
                 await code_vc.edit(name=new_name)
-            except Exception as e:
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to edit that VC.")
+                return
+            except discord.HTTPException as e:
                 await ctx.send(f"❌ Failed to update VC name: {e}")
                 return
 
     # react with tick emoji
     try:
         await ctx.message.add_reaction(tick_emoji)
-    except Exception:
-        pass
+    except discord.HTTPException as e:
+        print(f"[WARN] Failed to react with tick_emoji: {e}")
 
     await ctx.send(f"✅ Join code VC updated to: `{join_code}`")
 
+# -
 
 
 
 @bot.command(name="servername")
 async def server_name(ctx):
-    if ctx.author.id != owner_id:
+    """Owner-only: update server name VC"""
+    if ctx.author.id != OWNER_ID:
         # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with failed_emoji: {e}")
         return
 
     # Fetch server info from API
@@ -1423,7 +1430,6 @@ async def server_name(ctx):
         if not server_info:
             await ctx.send("❌ Failed to fetch server info.")
             return
-
         server_name_api = server_info.get("Name", "N/A")
 
     # Update the server name VC
@@ -1437,17 +1443,21 @@ async def server_name(ctx):
         if name_vc.name != new_name:
             try:
                 await name_vc.edit(name=new_name)
-            except Exception as e:
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to edit that VC.")
+                return
+            except discord.HTTPException as e:
                 await ctx.send(f"❌ Failed to update VC name: {e}")
                 return
 
     # react with tick emoji
     try:
         await ctx.message.add_reaction(tick_emoji)
-    except Exception:
-        pass
+    except discord.HTTPException as e:
+        print(f"[WARN] Failed to react with tick_emoji: {e}")
 
     await ctx.send(f"✅ Server name VC updated to: `{server_name_api}`")
+
 
 # --
 
@@ -1787,13 +1797,14 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
-    is_owner = user.id == owner_id
+    is_owner = user.id == OWNER_ID
 
     if not has_staff_role and not is_owner:
         try:
             await ctx.message.add_reaction(error_emoji)
-        except Exception:
-            pass
+        except discord.HTTPException as e:
+            print(f"[WARN] Failed to react with error_emoji: {e}")
+
         embed = discord.Embed(
             title="Permission Denied",
             description=f"{error_emoji} You do not have permission to use this command.",
@@ -1804,8 +1815,8 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
 
     try:
         await ctx.message.add_reaction(tick_emoji)
-    except Exception:
-        pass
+    except discord.HTTPException as e:
+        print(f"[WARN] Failed to react with tick_emoji: {e}")
 
     # Status embed
     status_embed = discord.Embed(
@@ -1822,8 +1833,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
         await send_to_game(f":pm {roblox_user} You have been kicked off the team for: {reason}")
         await asyncio.sleep(4)
         await send_to_game(f":unwanted {roblox_user}")
-
-    except Exception as e:
+    except Exception as e:  # keep generic here because ERLC can fail in multiple ways
         err_msg = get_erlc_error_message(0, exception=e)
         embed = discord.Embed(
             title="❌ ERLC API Error",
@@ -1832,7 +1842,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await ctx.send(embed=embed)
-        return  # Do NOT log failures
+        return  # do NOT log failures
 
     # Log success only
     await log_command(
@@ -1857,6 +1867,8 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, reason=None):
     embed.set_footer(text=f"Running {BOT_VERSION}")
     await ctx.send(embed=embed)
 
+
+# --- Handler: .erlc info ---
 async def handle_erlc_info(ctx):
     try:
         async with ctx.typing():
@@ -2209,3 +2221,4 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
