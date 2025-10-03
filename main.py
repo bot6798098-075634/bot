@@ -45,6 +45,7 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 UTC = timezone.utc
 
@@ -2248,5 +2249,6 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
