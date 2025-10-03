@@ -385,9 +385,9 @@ async def sync(ctx):
     if ctx.author.id != OWNER_ID:
         # react with failed emoji
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException as e:
-            print(f"[WARN] Failed to react with failed_emoji_2: {e}")
+            print(f"[WARN] Failed to react with failed_emoji: {e}")
         return  # exit command here!
 
     try:
@@ -2249,6 +2249,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
