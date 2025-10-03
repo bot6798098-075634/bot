@@ -406,14 +406,6 @@ async def sync(ctx):
 
 # --
 
-
-import os
-import sys
-import shutil
-import logging
-
-log = logging.getLogger(__name__)
-
 @bot.command(name="restart")
 async def restart(ctx):
     """Owner-only: restart the bot"""
@@ -2257,6 +2249,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
