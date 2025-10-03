@@ -1291,7 +1291,7 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
 # --- Loop task: players + queue ---
 @tasks.loop(seconds=140)
 async def update_vc_status():
-   # logger.info("🔄 Running VC update loop...")
+    #logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
     if not guild:
         logger.warning("⚠️ Guild not found.")
@@ -1321,9 +1321,8 @@ async def update_vc_status():
                 await queue_vc.edit(name=new_name)
                 await asyncio.sleep(3)
 
-        logger.info(
-       #     f"✅ Updated VC names: Players={player_count}/{max_players}, Queue={queue_count}"
-        )
+        #logger.info(f"✅ Updated VC names: Players={player_count}/{max_players}, Queue={queue_count}")
+
     except Exception as e:
         logger.error(f"❌ Failed to update VC names: {e}")
 
