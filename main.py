@@ -2149,51 +2149,51 @@ command_details = {
     },
     "erlc command": {
         "description": "Send a command to the server.",
-        "useage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
+        "usage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
     },
     "erlc kills": {
         "description": "Get all killlogs from the erlc server.",
-        "useage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
+        "usage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
     },
     "erlc players": {
         "description": "Show all players in game",
-        "useage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
+        "usage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
     },
         "discord check": {
         "description": "Show whos in the Discord server and whos not.",
-        "useage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
+        "usage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
     },
         "erlc info": {
         "description": "Show erlc info from the server.",
-        "useage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
+        "usage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
     },
         "erlc code": {
         "description": "Show the erlc server code.",
-        "useage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
+        "usage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
     },
         "servers": {
         "description": "Show all servers that the bots in",
-        "useage": f"`{COMMAND_PREFIX}servers` or `/servers`"
+        "usage": f"`{COMMAND_PREFIX}servers` or `/servers`"
     },
         "sync": {
         "description": "Sync all commands.",
-        "useage": f"`{COMMAND_PREFIX}sync`"
+        "usage": f"`{COMMAND_PREFIX}sync`"
     },
         "joincode": {
         "description": "Sync the VC channel that has the join code on it.",
-        "useage": f"`{COMMAND_PREFIX}joincode`"
+        "usage": f"`{COMMAND_PREFIX}joincode`"
     },
         "servername": {
         "description": "Sync the VC channel that has the server name on it.",
-        "useage": f"`{COMMAND_PREFIX}servername`"
+        "usage": f"`{COMMAND_PREFIX}servername`"
     },
         "erlc bans": {
         "description": "View all baned players in-game.",
-        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+        "usage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
     },
         "erlc teamkick": {
         "description": "Kick a player from any team that needs you not to be wanted.",
-        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+        "usage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
     }
 }
 
