@@ -32,6 +32,7 @@ import copy
 from dotenv import load_dotenv
 import io
 from typing import Union
+import shutil
 
 # ========================= Helpers =========================
 
@@ -413,21 +414,47 @@ async def restart(ctx):
         try:
             await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException as e:
-            print(f"[WARN] Failed to react with failed_emoji: {e}")
+            log.warning("Failed to react with failed_emoji: %s", e)
         return
 
     # react with tick emoji for owner
     try:
         await ctx.message.add_reaction(tick_emoji)
     except discord.HTTPException as e:
-        print(f"[WARN] Failed to react with tick_emoji: {e}")
+        log.warning("Failed to react with tick_emoji: %s", e)
 
     await ctx.send("♻️ Restarting bot...")
 
-    # Close bot, then restart the script
-    await bot.close()
-    os.execv(sys.executable, [sys.executable] + sys.argv)  # no shell=True → safe
+    # --- Validate python executable (avoid untrusted paths) ---
+    python_path = sys.executable  # usually an absolute path
+    # If sys.executable is missing or not executable, try finding python via PATH
+    if not (python_path and os.path.isabs(python_path) and os.access(python_path, os.X_OK)):
+        python_path = shutil.which("python3") or shutil.which("python")
 
+    if not python_path:
+        # Fail early with clear message rather than blindly invoking execv
+        await ctx.send("❌ Could not locate a Python executable to restart this process.")
+        log.error("restart failed: could not locate python executable (sys.executable=%r)", sys.executable)
+        return
+
+    # Build safe argv list (do not use shell)
+    argv = [python_path] + sys.argv
+
+    # Close bot cleanly, then replace current process image with the new one
+    try:
+        await bot.close()
+    except Exception as e:
+        # We still attempt execv even if close had issues, but log the problem.
+        log.exception("Error while closing bot before restart: %s", e)
+
+    # Exec the new interpreter. This does not invoke a shell and uses absolute path.
+    # This is intended behaviour and not using a shell avoids shell injection risks.
+    try:
+        os.execv(python_path, argv)
+    except OSError as e:
+        # Exec failed — inform operator and log full traceback
+        await ctx.send(f"❌ Failed to restart: `{e}`")
+        log.exception("os.execv failed while attempting to restart: %s", e)
 
 # ========================= ERLC stuff =========================
 
@@ -2221,4 +2248,5 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
