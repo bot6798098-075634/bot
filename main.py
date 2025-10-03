@@ -232,45 +232,39 @@ def get_uptime(bot) -> str:
 
 # ---------------------- .PING ----------------------
 
+# Helper function to create the ping embed
+def create_ping_embed(ctx_or_interaction):
+    latency = round(bot.latency * 1000)
+    uptime_str = get_uptime(bot)
+    embed = discord.Embed(
+        title=f"{pong_emoji} Pong!",
+        description=(
+            f"> {pong_emoji} Latency: `{latency} ms`\n"
+            f"> {time_emoji} Uptime: `{uptime_str}`\n"
+            f"> Version: `{BOT_VERSION}`\n"
+        ),
+        color=discord.Color(0x1E77BE)
+    )
+    
+    # Determine whether it's a Context (prefix command) or Interaction (slash command)
+    if isinstance(ctx_or_interaction, commands.Context):
+        embed.set_author(name=ctx_or_interaction.guild.name, icon_url=ctx_or_interaction.guild.icon.url)
+    else:  # discord.Interaction
+        embed.set_author(name=ctx_or_interaction.guild.name, icon_url=ctx_or_interaction.guild.icon.url)
+    
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+# Prefix command
 @bot.command(name="ping")
 async def ping_prefix(ctx: commands.Context):
-    latency = round(bot.latency * 1000)
-    uptime_str = get_uptime(bot)
-
-    embed = discord.Embed(
-        title=f"{pong_emoji} Pong!",
-        description=(
-            f"> {pong_emoji} Latency: `{latency} ms`\n"
-            f"> {time_emoji} Uptime: `{uptime_str}`\n"
-            f"> Version: `{BOT_VERSION}`\n"
-        ),
-        color=discord.Color(0x1E77BE)
-    )
-
-    embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-    embed.set_footer(text=f"Running {BOT_VERSION}")
+    embed = create_ping_embed(ctx)
     await ctx.send(embed=embed)
 
-
-# ---------------------- /PING ----------------------
-
+# Slash command
 @bot.tree.command(name="ping", description="Check the bot's latency and uptime")
 async def ping_slash(interaction: discord.Interaction):
-    latency = round(bot.latency * 1000)
-    uptime_str = get_uptime(bot)
-
-    embed = discord.Embed(
-        title=f"{pong_emoji} Pong!",
-        description=(
-            f"> {pong_emoji} Latency: `{latency} ms`\n"
-            f"> {time_emoji} Uptime: `{uptime_str}`\n"
-            f"> Version: `{BOT_VERSION}`\n"
-        ),
-        color=discord.Color(0x1E77BE)
-    )
-
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url)
-    embed.set_footer(text=f"Running {BOT_VERSION}")
+    embed = create_ping_embed(interaction)
     await interaction.response.send_message(embed=embed)
 
 # ---------------------- .uptime ----------------------
@@ -307,10 +301,41 @@ async def uptime_slash(interaction: discord.Interaction):
 
 # ---------------------- .servers ----------------------
 
+# Helper function to create server embed
+async def create_guild_embed(guild: discord.Guild):
+    owner = guild.owner
+    invite_link = "No invite available"
+
+    # Try to create an invite for the first available text channel
+    for channel in guild.text_channels:
+        if channel.permissions_for(guild.me).create_instant_invite:
+            try:
+                invite = await channel.create_invite(max_age=3600, max_uses=1, unique=True)
+                invite_link = invite.url
+                break
+            except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
+                print(f"Failed to create invite for guild '{guild.name}': {e}")
+                # Keep invite_link as "No invite available"
+
+    embed = discord.Embed(
+        title=guild.name,
+        description=(
+            f"ID: `{guild.id}`\n"
+            f"Owner: {owner}\n"
+            f"Members: {guild.member_count}\n"
+            f"Invite: {invite_link}"
+        ),
+        color=discord.Color(0x1E77BE)
+    )
+    if guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+# Prefix command
 @bot.command(name="servers")
 @commands.is_owner()
-async def servers(ctx: commands.Context):
-    # List all servers the bot is in.
+async def servers_prefix(ctx: commands.Context):
     await ctx.defer()
     guilds = bot.guilds
     if not guilds:
@@ -318,33 +343,13 @@ async def servers(ctx: commands.Context):
         return
 
     for guild in guilds:
-        owner = guild.owner
-        invite_link = "No invite available"
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).create_instant_invite:
-                try:
-                    invite = await channel.create_invite(max_age=3600, max_uses=1, unique=True)
-                    invite_link = invite.url
-                    break
-                except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
-                    print(f"Failed to create invite for guild {guild.name}: {e}")
-                    # Keep invite_link as "No invite available"
-        
-        embed = discord.Embed(
-            title=guild.name,
-            description=f"ID: `{guild.id}`\nOwner: {owner}\nMembers: {guild.member_count}\nInvite: {invite_link}",
-            color=discord.Color(0x1E77BE)
-        )
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
+        embed = await create_guild_embed(guild)
         await ctx.send(embed=embed)
 
-# ---------------------- /servers ----------------------
-
+# Slash command
 @bot.tree.command(name="servers", description="List all servers the bot is in")
 @is_owner()
-async def servers(interaction: discord.Interaction):
+async def servers_slash(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     guilds = bot.guilds
     if not guilds:
@@ -352,30 +357,9 @@ async def servers(interaction: discord.Interaction):
         return
 
     for guild in guilds:
-        owner = guild.owner
-        invite_link = "No invite available"
-
-        # Attempt to create an invite for the first available text channel
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).create_instant_invite:
-                try:
-                    invite = await channel.create_invite(max_age=3600, max_uses=1, unique=True)
-                    invite_link = invite.url
-                    break
-                except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
-                    print(f"Failed to create invite for guild '{guild.name}': {e}")
-                    # Keep invite_link as "No invite available"
-
-        embed = discord.Embed(
-            title=guild.name,
-            description=f"ID: `{guild.id}`\nOwner: {owner}\nMembers: {guild.member_count}\nInvite: {invite_link}",
-            color=discord.Color(0x1E77BE)
-        )
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-
+        embed = await create_guild_embed(guild)
         await interaction.followup.send(embed=embed, ephemeral=True)
+
 
 # ---------------------- .sync ----------------------
 
@@ -566,6 +550,31 @@ async def join_leave_log_task():
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await channel.send(embed=embed)
 
+# -
+
+# Helper function to process raw kill log entries
+def format_kill_entry(entry: dict) -> str:
+    ts = entry.get("Timestamp", 0)
+    killer_raw = entry.get("Killer", "Unknown:0")
+    victim_raw = entry.get("Killed", "Unknown:0")
+
+    # Split "Username:UserId"
+    if ":" in killer_raw:
+        killer_name, killer_id = killer_raw.split(":", 1)
+    else:
+        killer_name, killer_id = killer_raw, "0"
+
+    if ":" in victim_raw:
+        victim_name, victim_id = victim_raw.split(":", 1)
+    else:
+        victim_name, victim_id = victim_raw, "0"
+
+    # Build Roblox profile links if ID is valid
+    killer_link = f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)" if killer_id != "0" else killer_name
+    victim_link = f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)" if victim_id != "0" else victim_name
+
+    return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
+
 # ---------------------- kill logs ----------------------
 
 @tasks.loop(seconds=60)
@@ -574,7 +583,6 @@ async def kill_log_task():
     if not session:
         session = aiohttp.ClientSession()
 
-    # Fetch kill logs
     try:
         async with session.get(f"{API_BASE}/killlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
@@ -588,55 +596,18 @@ async def kill_log_task():
     if not data:
         return
 
-    # Get Discord channel
-    channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
-    if not channel:
-        try:
-            channel = await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
-        except Exception as e:
-            print(f"Failed to fetch kill log channel: {e}")
-            return
-
+    channel = bot.get_channel(KILL_LOG_CHANNEL_ID) or await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
     if not hasattr(kill_log_task, "last_ts"):
         kill_log_task.last_ts = 0
 
     kill_events = []
-
     for entry in data:
         ts = entry.get("Timestamp", 0)
         if ts <= kill_log_task.last_ts:
             continue
-
-        # Split "Username:UserId"
-        killer_raw = entry.get("Killer", "Unknown:0")
-        victim_raw = entry.get("Killed", "Unknown:0")
-
-        if ":" in killer_raw:
-            killer_name, killer_id = killer_raw.split(":", 1)
-        else:
-            killer_name, killer_id = killer_raw, "0"
-
-        if ":" in victim_raw:
-            victim_name, victim_id = victim_raw.split(":", 1)
-        else:
-            victim_name, victim_id = victim_raw, "0"
-
-        # Build Roblox profile links if ID is valid
-        killer_link = (
-            f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)"
-            if killer_id != "0" else killer_name
-        )
-        victim_link = (
-            f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)"
-            if victim_id != "0" else victim_name
-        )
-
-        kill_events.append(f"{killer_link} killed {victim_link} at <t:{ts}:F>")
-
-        # Update last timestamp
+        kill_events.append(format_kill_entry(entry))
         kill_log_task.last_ts = max(kill_log_task.last_ts, ts)
 
-    # Send all kills in one embed
     if kill_events:
         embed = discord.Embed(
             title="Kill Log",
@@ -1093,9 +1064,8 @@ async def erlc_command(interaction: discord.Interaction, command: str):
     # Log usage
     await log_command(user, command)
 
-# ---------------------- all players in the discord server embed for /discord check  ----------------------
-
 def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
+    """Embed when all players are in Discord"""
     embed = discord.Embed(
         title="Discord Check",
         description=f"{tick_emoji} All players are in the Discord!",
@@ -1105,26 +1075,24 @@ def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
     embed.set_footer(text=f"Running {BOT_VERSION}")
     return embed
 
-# ---------------------- main code for /discord check ----------------------
 
-async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed:
+async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed | None:
+    """Fetch players from API, compare to guild members, and build embed"""
     try:
         async with aiohttp.ClientSession() as session:
             headers = {"server-key": API_KEY}
             async with session.get(f"{API_BASE}/players", headers=headers) as res:
-                if res.status == 422:
-                    # No players → return "All in Discord" embed
+                if res.status == 422:  # No players
                     return all_players_in_discord_embed(guild)
-
                 if res.status != 200:
-                    # Other errors → raise
                     raise Exception(await res.text())
-
                 data = await res.json()
                 players = [p["Player"].split(":")[0] for p in data]
 
-        # Compare with Discord members
+        # Collect guild member names
         guild_members = [m.display_name for m in guild.members] + [m.name for m in guild.members]
+
+        # Check which Roblox names are not in Discord
         not_in_discord = []
         for roblox_name in players:
             pattern = re.compile(rf"\b{re.escape(roblox_name)}\b", re.IGNORECASE)
@@ -1134,11 +1102,12 @@ async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed:
         # Build embed
         if not_in_discord:
             formatted = "\n".join(
-                [f"[{u}](https://www.roblox.com/users/profile?username={u})" for u in not_in_discord]
+                f"[{u}](https://www.roblox.com/users/profile?username={u})"
+                for u in not_in_discord
             )
             embed = discord.Embed(
                 title="Discord Check",
-                description=f"There are **{len(not_in_discord)}** players **NOT** in the discord!\n> {formatted}",
+                description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n> {formatted}",
                 color=discord.Color(0x1E77BE),
             )
         else:
@@ -1149,18 +1118,19 @@ async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed:
         return embed
 
     except Exception as e:
-        raise e
+        print(f"Error fetching Discord check: {e}")
+        return None
 
 # ---------------------- /discord check ----------------------
 
 @discord_group.command(name="check", description="Check which players are not in the Discord.")
 async def discord_check(interaction: discord.Interaction):
     await interaction.response.defer()
-    try:
-        embed = await fetch_discord_check_embed(interaction.guild)
+    embed = await fetch_discord_check_embed(interaction.guild)
+    if embed:
         await interaction.followup.send(embed=embed)
-    except Exception as e:
-        await interaction.followup.send(get_erlc_error_message(0, exception=e))
+    else:
+        await interaction.followup.send(get_erlc_error_message(0, exception="Failed to fetch check"))
 
 # ---------------------- /erlc code ----------------------
 
@@ -1198,8 +1168,6 @@ async def erlc_code(interaction: discord.Interaction):
 async def erlc_kills(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         headers = {"server-key": API_KEY}
-
-        # Fetch kill logs
         try:
             async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
                 if resp.status != 200:
@@ -1212,53 +1180,22 @@ async def erlc_kills(interaction: discord.Interaction):
                 f"{failed_emoji} Failed to fetch kill logs: `{e}`", ephemeral=True
             )
 
-        if not data:
-            description = "> There have not been any kill logs in-game."
-        else:
-            kill_events = []
-            for entry in data:
-                ts = entry.get("Timestamp", 0)
+    if not data:
+        description = "> There have not been any kill logs in-game."
+    else:
+        description = "\n".join(format_kill_entry(entry) for entry in data)
 
-                # Split "Username:UserId"
-                killer_raw = entry.get("Killer", "Unknown:0")
-                victim_raw = entry.get("Killed", "Unknown:0")
-
-                if ":" in killer_raw:
-                    killer_name, killer_id = killer_raw.split(":", 1)
-                else:
-                    killer_name, killer_id = killer_raw, "0"
-
-                if ":" in victim_raw:
-                    victim_name, victim_id = victim_raw.split(":", 1)
-                else:
-                    victim_name, victim_id = victim_raw, "0"
-
-                # Build Roblox profile links if ID is valid
-                killer_link = (
-                    f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)"
-                    if killer_id != "0" else killer_name
-                )
-                victim_link = (
-                    f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)"
-                    if victim_id != "0" else victim_name
-                )
-
-                kill_events.append(f"{killer_link} killed {victim_link} at <t:{ts}:F>")
-
-            description = "\n".join(kill_events)
-
-        embed = discord.Embed(
-            title=f"ER:LC Kill logs ({len(data)})",
-            description=description,
-            colour=0x1E77BE,
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        embed.set_author(
-            name=interaction.guild.name,
-            icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
-        )
-
-        await interaction.response.send_message(embed=embed)
+    embed = discord.Embed(
+        title=f"ER:LC Kill logs ({len(data)})",
+        description=description,
+        colour=0x1E77BE,
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    embed.set_author(
+        name=interaction.guild.name,
+        icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
+    )
+    await interaction.response.send_message(embed=embed)
 
 # ---------------------- /erlc players ----------------------
 
@@ -1392,36 +1329,41 @@ async def update_vc_status():
 
 # -
 
-@bot.command(name="joincode")
-async def join_code(ctx):
-    """Owner-only: update join code VC"""
+# ---------------------- Helpers ----------------------
+async def update_vc_name(
+    ctx,
+    api_field: str,
+    channel_id: int,
+    name_format: str,
+    success_message: str,
+):
+    """Generic helper for updating a VC name based on API field."""
+    # Owner check
     if ctx.author.id != OWNER_ID:
-        # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException as e:
             print(f"[WARN] Failed to react with failed_emoji: {e}")
         return
 
-    # Fetch join code from API
+    # Fetch data from API
     async with aiohttp.ClientSession() as session:
         server_info = await fetch_json(session, "", API_KEY)
         if not server_info:
             await ctx.send("❌ Failed to fetch server info.")
             return
-        join_code = server_info.get("JoinKey", "N/A")
+        field_value = server_info.get(api_field, "N/A")
 
-    # Update the join code VC
+    # Update VC name
     guild = ctx.guild
     if not guild:
         return
-
-    code_vc = guild.get_channel(CODE_VC_ID)
-    if code_vc:
-        new_name = f"「🔑」Code: {join_code}"
-        if code_vc.name != new_name:
+    vc = guild.get_channel(channel_id)
+    if vc:
+        new_name = name_format.format(value=field_value)
+        if vc.name != new_name:
             try:
-                await code_vc.edit(name=new_name)
+                await vc.edit(name=new_name)
             except discord.Forbidden:
                 await ctx.send("❌ I don't have permission to edit that VC.")
                 return
@@ -1429,115 +1371,38 @@ async def join_code(ctx):
                 await ctx.send(f"❌ Failed to update VC name: {e}")
                 return
 
-    # react with tick emoji
+    # React with ✅
     try:
         await ctx.message.add_reaction(tick_emoji)
     except discord.HTTPException as e:
         print(f"[WARN] Failed to react with tick_emoji: {e}")
 
-    await ctx.send(f"✅ Join code VC updated to: `{join_code}`")
+    await ctx.send(success_message.format(value=field_value))
 
-# -
 
+# ---------------------- Commands ----------------------
+@bot.command(name="joincode")
+async def join_code(ctx):
+    """Owner-only: update join code VC"""
+    await update_vc_name(
+        ctx,
+        api_field="JoinKey",
+        channel_id=CODE_VC_ID,
+        name_format="「🔑」Code: {value}",
+        success_message="✅ Join code VC updated to: `{value}`",
+    )
 
 
 @bot.command(name="servername")
 async def server_name(ctx):
     """Owner-only: update server name VC"""
-    if ctx.author.id != OWNER_ID:
-        # react with failed emoji
-        try:
-            await ctx.message.add_reaction(failed_emoji)
-        except discord.HTTPException as e:
-            print(f"[WARN] Failed to react with failed_emoji: {e}")
-        return
-
-    # Fetch server info from API
-    async with aiohttp.ClientSession() as session:
-        server_info = await fetch_json(session, "", API_KEY)
-        if not server_info:
-            await ctx.send("❌ Failed to fetch server info.")
-            return
-        server_name_api = server_info.get("Name", "N/A")
-
-    # Update the server name VC
-    guild = ctx.guild
-    if not guild:
-        return
-
-    name_vc = guild.get_channel(SERVERNAME_VC_ID)
-    if name_vc:
-        new_name = f"{SERVERNAME_PREFIX} {server_name_api}"
-        if name_vc.name != new_name:
-            try:
-                await name_vc.edit(name=new_name)
-            except discord.Forbidden:
-                await ctx.send("❌ I don't have permission to edit that VC.")
-                return
-            except discord.HTTPException as e:
-                await ctx.send(f"❌ Failed to update VC name: {e}")
-                return
-
-    # react with tick emoji
-    try:
-        await ctx.message.add_reaction(tick_emoji)
-    except discord.HTTPException as e:
-        print(f"[WARN] Failed to react with tick_emoji: {e}")
-
-    await ctx.send(f"✅ Server name VC updated to: `{server_name_api}`")
-
-
-# --
-
-# ---------------------- EMBED HELPERS ----------------------
-def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
-    embed = discord.Embed(
-        title="Discord Check",
-        description=f"{tick_emoji} All players are in the Discord!",
-        color=discord.Color(0x1E77BE),
+    await update_vc_name(
+        ctx,
+        api_field="Name",
+        channel_id=SERVERNAME_VC_ID,
+        name_format=f"{SERVERNAME_PREFIX} {{value}}",
+        success_message="✅ Server name VC updated to: `{value}`",
     )
-    embed.set_author(name=guild.name, icon_url=guild.icon.url)
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    return embed
-
-async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed:
-    try:
-        async with aiohttp.ClientSession() as session:
-            headers = {"server-key": API_KEY}
-            async with session.get(f"{API_BASE}/players", headers=headers) as res:
-                if res.status == 422:
-                    return all_players_in_discord_embed(guild)
-                if res.status != 200:
-                    raise Exception(await res.text())
-                data = await res.json()
-                players = [p["Player"].split(":")[0] for p in data]
-
-        guild_members = [m.display_name for m in guild.members] + [m.name for m in guild.members]
-        not_in_discord = []
-        for roblox_name in players:
-            pattern = re.compile(rf"\b{re.escape(roblox_name)}\b", re.IGNORECASE)
-            if not any(pattern.search(name) for name in guild_members):
-                not_in_discord.append(roblox_name)
-
-        if not_in_discord:
-            formatted = "\n".join(
-                [f"> [{u}](https://www.roblox.com/users/profile?username={u})" for u in not_in_discord]
-            )
-            embed = discord.Embed(
-                title="Discord Check",
-                description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n{formatted}",
-                color=discord.Color(0x1E77BE),
-            )
-        else:
-            embed = all_players_in_discord_embed(guild)
-
-        embed.set_author(name=guild.name, icon_url=guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        return embed
-
-    except Exception as e:
-        print(f"Error fetching Discord check: {e}")
-        return None
 
 # ---------------------- BACKGROUND TASK ----------------------
 previous_not_in_discord = set()  # global to track changes
