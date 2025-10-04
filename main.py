@@ -1443,6 +1443,7 @@ async def send_to_game(command: str):
             err_msg = get_erlc_error_message(0, exception=e)
             raise Exception(err_msg)
 
+
 async def run_teamkick_sequence(roblox_user: str, reason: str):
     """Run the in-game commands to perform a teamkick in ERLC."""
     await send_to_game(f":wanted {roblox_user}")
@@ -1502,7 +1503,7 @@ def build_status_embed(roblox_user: str) -> discord.Embed:
 async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
     user = interaction.user
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
-    is_owner = user.id == owner_id
+    is_owner = user.id == OWNER_ID
 
     if not has_staff_role and not is_owner:
         return await interaction.response.send_message(embed=build_permission_denied_embed(), ephemeral=True)
@@ -1514,16 +1515,13 @@ async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: s
     except Exception as e:
         return await interaction.followup.send(embed=build_teamkick_error_embed(e), ephemeral=True)
 
+    # ✅ Log command correctly
     await log_command(
         user=user,
-        command="/erlc teamkick",
-        roblox_user=roblox_user,
-        reason=reason,
-        owner_bypass=is_owner and not has_staff_role,
-        success=True
+        command=f"/erlc teamkick {roblox_user} {reason}"
     )
 
-    await interaction.followup.send(embed=build_teamkick_success_embed(user, roblox_user, reason))
+    await interaction.followup.send(embed=build_teamkick_success_embed(user, roblox_user, reason), ephemeral=True)
 
 # ----------------------
 
@@ -1648,9 +1646,10 @@ async def handle_erlc_bans(ctx):
 
 
 # --- Handler: .erlc teamkick ---
+# --- Handler: .erlc teamkick ---
 async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
-        return await ctx.send("❌ Usage: `!erlc teamkick <roblox_user> <reason>`")
+        return await ctx.send(f"❌ Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
@@ -1658,33 +1657,34 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
 
     if not has_staff_role and not is_owner:
         try:
-            await ctx.message.add_reaction(error_emoji)
+            await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException:
             pass
         return await ctx.send(embed=build_permission_denied_embed(prefix=True))
 
+    # React with ✅ to show command received
     try:
         await ctx.message.add_reaction(tick_emoji)
     except discord.HTTPException:
         pass
 
+    # Show processing embed
     await ctx.send(embed=build_status_embed(roblox_user))
 
+    # Run in-game sequence
     try:
         await run_teamkick_sequence(roblox_user, reason)
     except Exception as e:
         return await ctx.send(embed=build_teamkick_error_embed(e))
 
+    # Log the command — only actual parameters allowed
     await log_command(
         user=user,
-        command="!erlc teamkick",
-        roblox_user=roblox_user,
-        reason=reason,
-        success=True,
-        owner_bypass=is_owner and not has_staff_role
+        command=f"{COMMAND_PREFIX}erlc teamkick {roblox_user} {reason}"
     )
 
-    await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason))
+    # Send success embed
+    await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason), ephemeral=True)
 
 
 # --- Handler: .erlc info ---
