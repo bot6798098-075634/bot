@@ -36,8 +36,16 @@ import shutil
 
 # ========================= Helpers =========================
 
-COMMAND_PREFIX = "."
-BOT_VERSION = "v1.0.2"
+COMMAND_PREFIX = "." # Prefix for commands
+BOT_VERSION = "v1.0.2" # version
+seen_players = set()  # Tracks players to avoid duplicate logs
+last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
+
+# ========================= On/Off =========================
+
+welcome_status = True  # True = on, False = off
+erlc_welcome_status = True  # False = off, True = on
+join_leave_status = True  # True=on, False=off
 
 # ========================= Other =========================
 
@@ -93,42 +101,129 @@ session: aiohttp.ClientSession | None = None  # global session
 
 @bot.event
 async def on_ready():
+    # --------------------------------------------
+    # Declare global variables to be used/modified
+    # --------------------------------------------
+    global session, seen_players, erlc_welcome_status, join_leave_status, last_joinleave_ts
+
+    # ⚡ Debug: Bot is starting up
+    print("⚡ Bot starting...")
+
+    # --------------------------------------------
+    # Initialize global variables if they don't exist
+    # --------------------------------------------
+    if 'seen_players' not in globals():
+        # Set to keep track of players we have already seen in join logs
+        seen_players = set()
+    if 'erlc_welcome_status' not in globals():
+        # Boolean flag to enable/disable ER:LC welcome messages
+        erlc_welcome_status = False
+    if 'join_leave_status' not in globals():
+        # Boolean flag to control join/leave logging
+        join_leave_status = False
+    if 'last_joinleave_ts' not in globals():
+        # Timestamp of the latest join/leave log processed
+        last_joinleave_ts = 0
+
+    # --------------------------------------------
+    # Register slash command groups
+    # --------------------------------------------
     try:
-        # Register groups BEFORE syncing
+        # Add command groups to bot's command tree
         bot.tree.add_command(erlc_group)
         bot.tree.add_command(discord_group)
+        bot.tree.add_command(staff_group)
 
-        # Global sync
+        # Sync commands globally
         await bot.tree.sync()
-        print("Slash commands synced!")
-
+        print("✅ Slash commands synced!")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
-    bot.start_time = datetime.now(timezone.utc)
+    # --------------------------------------------
+    # Set bot startup time
+    # --------------------------------------------
+    bot.start_time = datetime.now(timezone.utc)  # timezone-aware UTC time
+    print(f"Bot start time set to {bot.start_time.isoformat()}")
 
-    global session
+    # --------------------------------------------
+    # Initialize aiohttp session if not already open
+    # --------------------------------------------
     if session is None or session.closed:
+        # aiohttp session used for API requests
         session = aiohttp.ClientSession()
+        print("✅ aiohttp session started")
 
-    # Start background tasks
+    # --------------------------------------------
+    # Initialize seen players from ER:LC join logs
+    # --------------------------------------------
     try:
-        join_leave_log_task.start()
-        kill_log_task.start()
-        modcall_log_task.start()
-        team_join_leave_log_task.start()
-        update_vc_status.start()
-        discord_check_task.start()
+        # Fetch join logs from API
+        joinlogs = await fetch_joinlogs()
+        max_ts = 0  # Track the latest timestamp
+
+        # Loop through all join log entries
+        for entry in joinlogs:
+            ts = entry.get("Timestamp", 0)  # Timestamp of this log
+            player = entry.get("Player")    # Player string (username:ID)
+
+            # Only add players who joined to the seen_players set
+            if player and entry.get("Join"):
+                seen_players.add(player)
+
+            # Update max timestamp seen
+            if ts > max_ts:
+                max_ts = ts
+
+        # Set last_joinleave_ts to latest timestamp to ignore old logs
+        last_joinleave_ts = max_ts
+        print(f"✅ Initialized seen_players with {len(seen_players)} entries, last_joinleave_ts={last_joinleave_ts}")
+
+    except Exception as e:
+        # Handle errors fetching join logs
+        print(f"⚠️ Failed to initialize seen_players: {e}")
+
+    # --------------------------------------------
+    # Start all background tasks
+    # --------------------------------------------
+    try:
+        # Tasks for logging joins/leaves, kills, mod calls, etc.
+        join_leave_log_task.start()        # Logs new join/leave events
+        kill_log_task.start()              # Logs kill events
+        modcall_log_task.start()           # Logs moderator calls
+        team_join_leave_log_task.start()   # Logs team join/leave events
+        update_vc_status.start()           # Updates VC status regularly
+        discord_check_task.start()         # Checks for Discord related events
+        erlc_welcome_task.start()          # Sends ER:LC welcome messages
+        print("✅ Background tasks started")
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
 
+    # --------------------------------------------
+    # Start presence updater task
+    # --------------------------------------------
+    update_presence.start()
+    print("✅ Presence updater started")
+
+    # --------------------------------------------
+    # Final debug info: bot is fully connected
+    # --------------------------------------------
+    print(f"{bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
+    print("-----------------------------------------------------------------------")
+
+
+@tasks.loop(count=1)
+async def update_presence():
     await bot.change_presence(
         status=discord.Status.dnd,
-        activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
+        activity=discord.Activity(type=discord.ActivityType.watching, name="over the server"),
     )
+    await asyncio.sleep(300)
 
-    print(f"{bot.user}({bot.user.id}) has connected to Discord and is watching over the server.")
-    print("-----------------------------------------------------------------------")
+    await bot.change_presence(
+        status=discord.Status.dnd,
+        activity=discord.Activity(type=discord.ActivityType.watching, name=".commands"),
+    )
 
 # ========================= Emojis =========================
 
@@ -469,44 +564,57 @@ HEADERS_POST = {
 
 @tasks.loop(seconds=60)
 async def join_leave_log_task():
-    global session
-    if not session:
+    # --------------------------------------------
+    # Make sure session exists
+    # --------------------------------------------
+    global session, last_joinleave_ts, seen_players
+    if not session or session.closed:
         session = aiohttp.ClientSession()
+      #  print("[DEBUG] aiohttp session started in join_leave_log_task")
 
+    # --------------------------------------------
+    # Fetch join logs from ER:LC API
+    # --------------------------------------------
     try:
         async with session.get(f"{API_BASE}/joinlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch join logs: {resp.status}")
+           #    print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
                 return
             data = await resp.json()
+       #     print(f"[DEBUG] Fetched {len(data)} join log entries")
     except Exception as e:
-        print(f"Error fetching join logs: {e}")
+     #   print(f"[DEBUG] Exception fetching join logs: {e}")
         return
 
     if not data:
+      #  print("[DEBUG] No join logs returned")
         return
 
-    # Get the channel (from cache or API)
+    # --------------------------------------------
+    # Fetch the Discord channel
+    # --------------------------------------------
     channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
         try:
             channel = await bot.fetch_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
         except Exception as e:
-            print(f"Failed to fetch join/leave log channel: {e}")
+       #     print(f"[DEBUG] Failed to fetch join/leave log channel: {e}")
             return
 
-    if not hasattr(join_leave_log_task, "last_ts"):
-        join_leave_log_task.last_ts = 0
-
-    join_events, leave_events = [], []
+    # --------------------------------------------
+    # Prepare lists for new joins and leaves
+    # --------------------------------------------
+    join_events = []
+    leave_events = []
 
     for entry in data:
         ts = entry.get("Timestamp", 0)
-        if ts <= join_leave_log_task.last_ts:
-            continue
-
         player_str = entry.get("Player", "Unknown:0")
         joined = entry.get("Join", True)
+
+        # Skip any logs that occurred before the bot started
+        if ts <= last_joinleave_ts:
+            continue
 
         # Parse username and Roblox ID
         try:
@@ -516,21 +624,32 @@ async def join_leave_log_task():
             username = player_str
             player_id = 0
 
+        # Create a clickable Roblox profile link if ID exists
         user_link = (
             f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
             if player_id
             else username
         )
 
+        # Check join/leave and if player was already seen
         if joined:
-            join_events.append(f"{user_link} joined at <t:{ts}:F>")
+            if player_str not in seen_players:
+                join_events.append(f"{user_link} joined at <t:{ts}:F>")
+                seen_players.add(player_str)  # Mark player as seen
+            #    print(f"[DEBUG] Player joined: {player_str}")
         else:
-            leave_events.append(f"{user_link} left at <t:{ts}:F>")
+            if player_str in seen_players:
+                leave_events.append(f"{user_link} left at <t:{ts}:F>")
+                seen_players.remove(player_str)  # Remove from seen players
+              #  print(f"[DEBUG] Player left: {player_str}")
 
-        # Update last timestamp
-        join_leave_log_task.last_ts = max(join_leave_log_task.last_ts, ts)
+        # Update last_joinleave_ts to latest timestamp processed
+        if ts > last_joinleave_ts:
+            last_joinleave_ts = ts
 
-    # Send a single embed for all joins
+    # --------------------------------------------
+    # Send join events embed
+    # --------------------------------------------
     if join_events:
         embed = discord.Embed(
             title="Join Log",
@@ -539,8 +658,11 @@ async def join_leave_log_task():
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await channel.send(embed=embed)
+       # print(f"[DEBUG] Sent join log embed with {len(join_events)} entries")
 
-    # Send a single embed for all leaves
+    # --------------------------------------------
+    # Send leave events embed
+    # --------------------------------------------
     if leave_events:
         embed = discord.Embed(
             title="Leave Log",
@@ -549,6 +671,7 @@ async def join_leave_log_task():
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await channel.send(embed=embed)
+      #  print(f"[DEBUG] Sent leave log embed with {len(leave_events)} entries")
 
 # -
 
@@ -1437,11 +1560,19 @@ async def send_to_game(command: str):
                     except Exception:
                         api_code = None
 
+                    # Check for Server Offline (3002) and ignore it
+                    if api_code == 3002 or "3002" in str(await resp.text()):
+                    #    print(f"[DEBUG {datetime.now(timezone.utc)}] Server offline, cannot send command: {command}")
+                        return
+
+                    # Otherwise, raise the error as usual
                     err_msg = get_erlc_error_message(resp.status, api_code)
                     raise Exception(err_msg)
+
         except Exception as e:
+            # Catch all other exceptions and log
             err_msg = get_erlc_error_message(0, exception=e)
-            raise Exception(err_msg)
+           # print(f"[DEBUG {datetime.now(timezone.utc)}] Exception sending command: {err_msg}")
 
 
 async def run_teamkick_sequence(roblox_user: str, reason: str):
@@ -2443,6 +2574,10 @@ WELCOME_EMOJI = "<:SRPC:1345744266017636362>"
 
 @bot.event
 async def on_member_join(member: discord.Member):
+    # Only send welcome messages if enabled
+    if not welcome_status:
+        return
+
     # Make sure it's the correct server
     if member.guild.id != SERVER_ID:
         return
@@ -2458,6 +2593,63 @@ async def on_member_join(member: discord.Member):
     )
 
     await channel.send(message)
+
+#---
+
+
+WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all."
+
+
+
+# --- Helper Functions ---
+async def fetch_joinlogs():
+    url = "https://api.policeroleplay.community/v1/server/joinlogs"
+    headers = {"server-key": API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
+                return []
+            data = await resp.json()
+            return data
+
+# --- Task Loop ---
+@tasks.loop(seconds=60)
+async def erlc_welcome_task():
+    global seen_players
+  #  print(f"[DEBUG {datetime.now(timezone.utc)}] Running ER:LC join/leave check.")
+
+    try:
+        joinlogs = await fetch_joinlogs()  # Make sure this returns latest join logs
+    except Exception as e:
+    #    print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch joinlogs: {e}")
+        return
+
+    current_players = set()
+    for entry in joinlogs:
+        player = entry.get("Player")  # "PlayerName:Id"
+        join = entry.get("Join")
+        if not player:
+            continue
+
+        current_players.add(player)
+
+        if join and player not in seen_players:
+            # Player joined
+            seen_players.add(player)
+            rid = player.split(":")[1] if ":" in player else player
+         #   print(f"[DEBUG {datetime.now(timezone.utc)}] Player joined: {rid}")
+
+            if erlc_welcome_status:
+                # Send ER:LC PM command
+                username = player.split(":")[0]
+                await send_to_game(f":pm {username} {WELCOME_MESSAGE}")  # Your POST command wrapper
+
+        elif not join and player in seen_players:
+            # Player left
+            seen_players.remove(player)
+            rid = player.split(":")[1] if ":" in player else player
+        #    print(f"[DEBUG {datetime.now(timezone.utc)}] Player left: {rid}")
 
 # ---------------------- commmand info ----------------------
 
@@ -2716,5 +2908,6 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
