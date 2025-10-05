@@ -2447,7 +2447,7 @@ command_categories = {
         ("commands", "show all commands"),
         ("feedback", "Send feedback to a staff member"),
         ("suggest", "Submit a public suggestion"),
-        ("staff suggest", "Submit a staff-only suggestion")
+        ("staff suggest", "Submit a staff-only suggestion"),
         ("afk", "Set yourself as AFK")
     ],
     "⚙️ Moderation": [
@@ -2692,3 +2692,4 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
