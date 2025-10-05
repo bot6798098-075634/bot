@@ -2269,6 +2269,112 @@ async def staff_suggest(interaction: discord.Interaction, suggestion: str):
         embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+#===
+
+STAFF_FEEDBACK_CHANNEL_ID = 1343621982549311519  # 👈 staff-only feedback channel
+STAFF_FEEDBACK_LOG_CHANNEL_ID = 1381267054354632745  # 👈 staff log channel
+
+# ---------------- UTILITIES ----------------
+async def send_feedback_embed(author: discord.User, target: discord.Member, feedback: str, guild: discord.Guild):
+    # Prevent self-feedback
+    if author.id == target.id:
+        embed = discord.Embed(
+            title=f"{error_emoji} Invalid Action",
+            description="You can’t send feedback to yourself.",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        return embed
+
+    # Check if target has the staff role
+    staff_role = guild.get_role(staff_role_id)
+    if not staff_role or staff_role not in target.roles:
+        embed = discord.Embed(
+            title=f"{error_emoji} Invalid Target",
+            description=f"{target.mention} is not a staff member.",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        return embed
+
+    # Channels
+    staff_channel = bot.get_channel(STAFF_FEEDBACK_CHANNEL_ID)
+    log_channel = bot.get_channel(STAFF_FEEDBACK_LOG_CHANNEL_ID)
+    if not staff_channel:
+        return discord.Embed(
+            title=f"{failed_emoji} Error",
+            description="Feedback channel not found. Please contact support.",
+            color=discord.Color.red()
+        )
+
+    # Unix timestamp for time field
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+
+    # Feedback embed for staff
+    staff_embed = discord.Embed(
+        title="💬 New Feedback Received",
+        description=f"**Feedback:**\n```{feedback}```",
+        color=0x1E77BE,
+    )
+    staff_embed.add_field(name="🧑‍💻 From", value=f"{author.mention} (`{author.id}`)", inline=False)
+    staff_embed.add_field(name="🎯 To", value=f"{target.mention} (`{target.id}`)", inline=False)
+    staff_embed.add_field(name=f"{time_emoji} Time", value=f"<t:{timestamp}:F>", inline=False)
+    if guild and guild.icon:
+        staff_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    staff_embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # Send to feedback channel and ping staff member
+    await staff_channel.send(content=f"-# {ping_emoji} {target.mention}", embed=staff_embed)
+
+    # Log embed for internal tracking
+    if log_channel:
+        log_embed = discord.Embed(
+            title=f"{clipboard_emoji} Feedback Logged",
+            color=0x1E77BE,
+        )
+        log_embed.add_field(name="🧑‍💻 From", value=f"{author.mention} (`{author.id}`)", inline=False)
+        log_embed.add_field(name="🎯 To", value=f"{target.mention} (`{target.id}`)", inline=False)
+        log_embed.add_field(name="💬 Feedback", value=f"```{feedback}```", inline=False)
+        log_embed.add_field(name=f"{time_emoji} Time", value=f"<t:{timestamp}:F>", inline=False)
+    if guild and guild.icon:
+        log_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+        log_embed.set_footer(text=f"Running {BOT_VERSION}")
+        await log_channel.send(embed=log_embed)
+
+    # Confirmation embed to the sender
+    confirm_embed = discord.Embed(
+        title=F"{tick_emoji} Feedback Sent",
+        description=f"Your feedback to {target.mention} has been sent to the staff channel.",
+        color=discord.Color.green(),
+    )
+    if guild and guild.icon:
+        confirm_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    confirm_embed.set_footer(text=f"Running {BOT_VERSION}")
+    return confirm_embed
+
+# ---------------- PREFIX COMMAND ----------------
+@bot.command(name="feedback")
+async def feedback_prefix(ctx, to: discord.Member = None, *, feedback: str = None):
+    # Ensure usage is correct
+    if not to or not feedback:
+        embed = discord.Embed(
+            title="💡 Usage",
+            description="# Use the command like this:\n`!feedback @staff <your message>`\n\nExample:\n`!feedback @Admin You're doing great!`",
+            color=discord.Color.orange()
+        )
+        return await ctx.reply(embed=embed)
+
+    # Send feedback
+    embed = await send_feedback_embed(ctx.author, to, feedback, ctx.guild)
+    await ctx.reply(embed=embed)
+
+# ---------------- SLASH COMMAND ----------------
+@bot.tree.command(name="feedback", description="Send feedback to a staff member.")
+async def feedback_slash(interaction: discord.Interaction, to: discord.Member, feedback: str):
+    await interaction.response.defer(ephemeral=True)
+    embed = await send_feedback_embed(interaction.user, to, feedback, interaction.guild)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -2501,5 +2607,6 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
