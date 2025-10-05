@@ -2435,6 +2435,30 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+#--
+
+SERVER_ID = 1343179590247645205
+WELCOME_CHANNEL_ID = 1343179590247645208
+WELCOME_EMOJI = "<:SRPC:1345744266017636362>"
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    # Make sure it's the correct server
+    if member.guild.id != SERVER_ID:
+        return
+
+    channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
+    if not channel:
+        return
+
+    # Construct welcome message
+    message = (
+        f"Hello, {member.mention}! Welcome to {WELCOME_EMOJI} {member.guild.name}.\n"
+        f"-# You're member {member.guild.member_count}."
+    )
+
+    await channel.send(message)
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -2692,4 +2716,5 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
