@@ -2375,6 +2375,7 @@ async def feedback_slash(interaction: discord.Interaction, to: discord.Member, f
     embed = await send_feedback_embed(interaction.user, to, feedback, interaction.guild)
     await interaction.followup.send(embed=embed, ephemeral=True)
 
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -2384,7 +2385,10 @@ command_categories = {
         ("Sync", "Sync slash commands owner only + prefix only"),
         ("servers", "owner only see all servers that the bots in"),
         ("help", "show info about a command"),
-        ("commands", "show all commands")
+        ("commands", "show all commands"),
+        ("feedback", "Send feedback to a staff member"),
+        ("suggest", "Submit a public suggestion"),
+        ("staff suggest", "Submit a staff-only suggestion")
     ],
     "⚙️ Moderation": [
         ("N/A", "N/A")
@@ -2397,7 +2401,8 @@ command_categories = {
         ("erlc info", "Give erlc info from the server"),
         ("erlc code", "Show the erlc code"),
         ("erlc bans", "Vuew all baned players from in-game."),
-        ("erlc teamkick", "kick a player off team.")
+        ("erlc teamkick", "kick a player off team."),
+        ("erlc logs", "Show in-game command logs")
     ],
     "🔒 Channel Management": [
         ("N/A", "N/A")
@@ -2507,51 +2512,67 @@ command_details = {
     },
     "erlc command": {
         "description": "Send a command to the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
+        "useage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
     },
     "erlc kills": {
         "description": "Get all killlogs from the erlc server.",
-        "usage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
+        "useage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
     },
     "erlc players": {
         "description": "Show all players in game",
-        "usage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
+        "useage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
     },
         "discord check": {
         "description": "Show whos in the Discord server and whos not.",
-        "usage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
+        "useage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
     },
         "erlc info": {
         "description": "Show erlc info from the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
+        "useage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
     },
         "erlc code": {
         "description": "Show the erlc server code.",
-        "usage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
+        "useage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
     },
         "servers": {
         "description": "Show all servers that the bots in",
-        "usage": f"`{COMMAND_PREFIX}servers` or `/servers`"
+        "useage": f"`{COMMAND_PREFIX}servers` or `/servers`"
     },
         "sync": {
         "description": "Sync all commands.",
-        "usage": f"`{COMMAND_PREFIX}sync`"
+        "useage": f"`{COMMAND_PREFIX}sync`"
     },
         "joincode": {
         "description": "Sync the VC channel that has the join code on it.",
-        "usage": f"`{COMMAND_PREFIX}joincode`"
+        "useage": f"`{COMMAND_PREFIX}joincode`"
     },
         "servername": {
         "description": "Sync the VC channel that has the server name on it.",
-        "usage": f"`{COMMAND_PREFIX}servername`"
+        "useage": f"`{COMMAND_PREFIX}servername`"
     },
         "erlc bans": {
         "description": "View all baned players in-game.",
-        "usage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
     },
         "erlc teamkick": {
         "description": "Kick a player from any team that needs you not to be wanted.",
-        "usage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+    },
+        "erlc logs": {
+        "description": "Show in-game command logs.",
+        "useage": f"`{COMMAND_PREFIX}erlc logs` or `/erlc logs`"
+    },
+        "feedback": {
+        "description": "Send feedback to a staff member.",
+        "useage": f"`{COMMAND_PREFIX}feedback [@staff] [message]` or `/feedback [@staff] [message]`"
+    },
+        "suggest": {
+        "description": "Submit a public suggestion.",
+        "useage": f"`{COMMAND_PREFIX}suggest [your idea]` or `/suggest [your idea]`"
+    },
+        "staff suggest": {
+        "description": "Submit a staff-only suggestion.",
+        "useage": f"`{COMMAND_PREFIX}staff suggest [your idea]` or `/staff suggest [your idea]`"
     }
 }
 
@@ -2591,7 +2612,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN")
+        token = os.getenv("DISCORD_TOKEN_BATA")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
@@ -2607,6 +2628,3 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
-
-
-
