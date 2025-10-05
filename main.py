@@ -2375,6 +2375,65 @@ async def feedback_slash(interaction: discord.Interaction, to: discord.Member, f
     embed = await send_feedback_embed(interaction.user, to, feedback, interaction.guild)
     await interaction.followup.send(embed=embed, ephemeral=True)
 
+#--
+
+# AFK storage: user_id -> {"reason": str, "set_time": datetime, "pings": [(channel_id, pinger_id, timestamp)]}
+afk_users = {}
+
+# ---------------- SET AFK ----------------
+async def set_afk(user: discord.User, reason: str):
+    afk_users[user.id] = {"reason": reason, "set_time": datetime.now(timezone.utc), "pings": []}
+    
+    embed = discord.Embed(
+        description=f"{tick_emoji} I have set you as AFK for: **{reason}**" if reason else "I have set you as AFK.",
+        color=discord.Color.orange()
+    )
+    return embed
+
+# ---------------- COMMANDS ----------------
+@bot.command(name="afk")
+async def afk_prefix(ctx, *, reason: str = None):
+    embed = await set_afk(ctx.author, reason)
+    await ctx.send(embed=embed)
+
+@bot.tree.command(name="afk", description="Set yourself as AFK")
+async def afk_slash(interaction: discord.Interaction, reason: str = None):
+    await interaction.response.defer(ephemeral=True)
+    embed = await set_afk(interaction.user, reason)
+    await interaction.followup.send(embed=embed, ephemeral=False)
+
+# ---------------- AFK HANDLING ----------------
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Manual un-AFK
+    if message.author.id in afk_users:
+        afk_info = afk_users.pop(message.author.id)
+        ping_lines = []
+        for channel_id, pinger_id, ts in afk_info["pings"]:
+            channel_link = f"<#{channel_id}>"
+            pinger = bot.get_user(pinger_id)
+            if pinger:
+                ping_lines.append(f"-# {pinger.name} pinged you in {channel_link} at <t:{int(ts.timestamp())}:F>")
+        if ping_lines:
+            reply_text = f"{tick_emoji} Welcome back {message.author.mention}! You were pinged:\n" + "\n".join(ping_lines)
+        else:
+            reply_text = f"{tick_emoji} Welcome back {message.author.mention}!"
+        await message.channel.send(reply_text)
+
+    # Reply to AFK pings
+    for user in message.mentions:
+        if user.id in afk_users and user.id != message.author.id:
+            afk_info = afk_users[user.id]
+            afk_info["pings"].append((message.channel.id, message.author.id, datetime.now(timezone.utc)))
+            reply_text = f"💤 {user.display_name} is currently AFK"
+            if afk_info["reason"]:
+                reply_text += f": {afk_info['reason']}"
+            await message.channel.send(reply_text)
+
+    await bot.process_commands(message)
 
 # ---------------------- commmand info ----------------------
 
@@ -2389,6 +2448,7 @@ command_categories = {
         ("feedback", "Send feedback to a staff member"),
         ("suggest", "Submit a public suggestion"),
         ("staff suggest", "Submit a staff-only suggestion")
+        ("afk", "Set yourself as AFK")
     ],
     "⚙️ Moderation": [
         ("N/A", "N/A")
@@ -2573,6 +2633,10 @@ command_details = {
         "staff suggest": {
         "description": "Submit a staff-only suggestion.",
         "useage": f"`{COMMAND_PREFIX}staff suggest [your idea]` or `/staff suggest [your idea]`"
+    },
+        "afk": {
+        "description": "Set yourself as AFK.",
+        "useage": f"`{COMMAND_PREFIX}afk [reason]` or `/afk [reason]`"
     }
 }
 
