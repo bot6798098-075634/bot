@@ -561,94 +561,123 @@ HEADERS_POST = {
 }
 
 # ---------------------- join/leave logs ----------------------
-
 # --------------------------------------------
-# Helper: Parse a player string into username and ID
-# --------------------------------------------
-def parse_player(player_str):
-    try:
-        username, id_str = player_str.split(":", 1)
-        player_id = int(id_str)
-    except (ValueError, AttributeError):
-        username = player_str
-        player_id = 0
-    return username, player_id
-
-# --------------------------------------------
-# Helper: Build embed and send it
-# --------------------------------------------
-async def send_log_embed(channel, title, events, color):
-    if not events:
-        return
-    embed = discord.Embed(
-        title=title,
-        description="\n".join(events),
-        colour=color
-    )
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    await channel.send(embed=embed)
-
-# --------------------------------------------
-# Main task: Track joins and leaves
+# Background task: Check ER:LC join/leave logs
 # --------------------------------------------
 @tasks.loop(seconds=60)
 async def join_leave_log_task():
+    # --------------------------------------------
+    # Ensure aiohttp session exists
+    # --------------------------------------------
     global session, last_joinleave_ts, seen_players
-
-    # Ensure session
     if not session or session.closed:
         session = aiohttp.ClientSession()
+        print("[DEBUG] aiohttp session started in join_leave_log_task")
 
-    # Fetch join logs
+    print("[DEBUG] join_leave_log_task running...")
+
+    # --------------------------------------------
+    # Fetch join logs from ER:LC API
+    # --------------------------------------------
     try:
         async with session.get(f"{API_BASE}/joinlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
+                print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
                 return
             data = await resp.json()
-    except Exception:
-        return
-    if not data:
+            print(f"[DEBUG] Fetched {len(data)} join log entries")
+    except Exception as e:
+        print(f"[DEBUG] Exception fetching join logs: {e}")
         return
 
-    # Fetch channel
+    if not data:
+        print("[DEBUG] No join logs returned")
+        return
+
+    # --------------------------------------------
+    # Fetch the Discord channel
+    # --------------------------------------------
     channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
         try:
             channel = await bot.fetch_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] Failed to fetch join/leave log channel: {e}")
             return
 
-    join_events, leave_events = [], []
+    # --------------------------------------------
+    # Prepare lists for new joins and leaves
+    # --------------------------------------------
+    join_events = []
+    leave_events = []
 
-    # Process each entry
     for entry in data:
         ts = entry.get("Timestamp", 0)
         player_str = entry.get("Player", "Unknown:0")
         joined = entry.get("Join", True)
 
-        # Skip logs before bot started
+        # Skip logs older than the last processed timestamp
         if ts <= last_joinleave_ts:
             continue
 
-        username, player_id = parse_player(player_str)
-        user_link = f"[{username}](https://www.roblox.com/users/{player_id}/profile)" if player_id else username
+        # Parse username and Roblox ID
+        try:
+            username, id_str = player_str.split(":", 1)
+            player_id = int(id_str)
+        except (ValueError, AttributeError):
+            username = player_str
+            player_id = 0
 
-        if joined and player_str not in seen_players:
-            join_events.append(f"{user_link} joined at <t:{ts}:F>")
-            seen_players.add(player_str)
-        elif not joined and player_str in seen_players:
-            leave_events.append(f"{user_link} left at <t:{ts}:F>")
-            seen_players.remove(player_str)
+        # Create a clickable Roblox profile link if ID exists
+        user_link = (
+            f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
+            if player_id
+            else username
+        )
 
-        # Update last timestamp
+        # Check join/leave and if player was already seen
+        if joined:
+            if player_str not in seen_players:
+                join_events.append(f"{user_link} joined at <t:{ts}:F>")
+                seen_players.add(player_str)  # Mark player as seen
+                print(f"[DEBUG] Player joined: {player_str}")
+        else:
+            if player_str in seen_players:
+                leave_events.append(f"{user_link} left at <t:{ts}:F>")
+                seen_players.remove(player_str)  # Remove from seen players
+                print(f"[DEBUG] Player left: {player_str}")
+
+        # Update last_joinleave_ts to latest timestamp processed
         if ts > last_joinleave_ts:
             last_joinleave_ts = ts
 
-    # Send embeds
-    await send_log_embed(channel, "Join Log", join_events, 0x00f529)
-    await send_log_embed(channel, "Leave Log", leave_events, 0xf50000)
+    # --------------------------------------------
+    # Helper: Send embed for events
+    # --------------------------------------------
+    async def send_log_embed(channel, title, events, color=0x1E77BE):
+        if not events:
+            print(f"[DEBUG] No events to send for '{title}'")
+            return
+        embed = discord.Embed(
+            title=title,
+            description="\n".join(events),
+            colour=color
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        await channel.send(embed=embed)
+        print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
 
+    # --------------------------------------------
+    # Send join events embed
+    # --------------------------------------------
+    if join_events:
+        await send_log_embed(channel, "Join Log", join_events, 0x00f529)
 
+    # --------------------------------------------
+    # Send leave events embed
+    # --------------------------------------------
+    if leave_events:
+        await send_log_embed(channel, "Leave Log", leave_events, 0xf50000)
 # -
 
 # Helper function to process raw kill log entries
@@ -2884,6 +2913,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
