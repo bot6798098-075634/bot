@@ -566,7 +566,7 @@ HEADERS_POST = {
 # --------------------------------------------
 async def send_log_embed(channel, title, events, color=0x1E77BE):
     if not events:
-        print(f"[DEBUG] No events to send for '{title}'")
+      #  print(f"[DEBUG] No events to send for '{title}'")
         return
     embed = discord.Embed(
         title=title,
@@ -575,7 +575,7 @@ async def send_log_embed(channel, title, events, color=0x1E77BE):
     )
     embed.set_footer(text=f"Running {BOT_VERSION}")
     await channel.send(embed=embed)
-    print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
+   # print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
 
 # --------------------------------------------
 # Background Task: Check ER:LC Join/Leave Logs
@@ -2903,6 +2903,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
