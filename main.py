@@ -37,7 +37,7 @@ import shutil
 # ========================= Helpers =========================
 
 COMMAND_PREFIX = "."
-BOT_VERSION = "v1.0.1"
+BOT_VERSION = "v1.0.2"
 
 # ========================= Other =========================
 
@@ -1632,6 +1632,56 @@ async def erlc_logs(interaction: discord.Interaction):
 
 #--
 
+async def fetch_erlc_logs() -> list:
+    """Fetch ER:LC logs from the external API."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                raise RuntimeError(f"API error {r.status}")
+            return await r.json()
+
+
+def build_erlc_embed(guild: discord.Guild, logs: list) -> discord.Embed:
+    """Create an embed displaying ER:LC logs."""
+    embed = discord.Embed(
+        title=f"ER:LC Logs ({len(logs)})",
+        colour=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+
+    # Author & footer
+    if guild:
+        if guild.icon:
+            embed.set_author(name=guild.name, icon_url=guild.icon.url)
+        else:
+            embed.set_author(name=guild.name)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # No logs found
+    if not logs:
+        embed.description = "There are no logs in-game."
+        return embed
+
+    # Format log entries
+    lines = [format_log_entry(entry) for entry in logs[:10]]
+    if len(logs) > 10:
+        lines.append(f"...and {len(logs) - 10} more logs not shown.")
+
+    embed.description = "\n".join(lines)
+    return embed
+
+
+def format_log_entry(entry: dict) -> str:
+    """Format a single log entry for display."""
+    name, rid = parse_player(entry.get("Player"))
+    cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+    ts = entry.get("Timestamp")
+    t = f"<t:{int(ts)}:F>" if isinstance(ts, (int, float)) else "Unknown time"
+
+    if rid:
+        return f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}"
+    return f"{name} used `{cmd}` at {t}"
+
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
 @bot.command(name="erlc")
@@ -1665,71 +1715,49 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
 
 # --- Handler: erlc logs ---
 async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
+    """Handles command to display ER:LC logs in an embed."""
     user = ctx_or_interaction.user if is_interaction else ctx_or_interaction.author
     guild = ctx_or_interaction.guild
 
     # Permission check
-    if user.id != OWNER_ID:
-        role = guild.get_role(staff_role_id)
-        if not role or role not in user.roles:
-            msg = "❌ You don’t have permission to use this command."
-            if is_interaction:
-                return await ctx_or_interaction.response.send_message(msg, ephemeral=True)
-            else:
-                return await ctx_or_interaction.send(msg)
+    if not await has_permission(user, guild):
+        msg = "❌ You don’t have permission to use this command."
+        return await send_response(ctx_or_interaction, msg, is_interaction, ephemeral=True)
 
     if is_interaction:
         await ctx_or_interaction.response.defer()
 
     # Fetch logs
-    import aiohttp
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
-            if r.status != 200:
-                msg = f"⚠️ API error {r.status}"
-                if is_interaction:
-                    return await ctx_or_interaction.followup.send(msg, ephemeral=True)
-                else:
-                    return await ctx_or_interaction.send(msg)
-            logs = await r.json()
+    try:
+        logs = await fetch_erlc_logs()
+    except RuntimeError as e:
+        return await send_response(ctx_or_interaction, f"⚠️ {e}", is_interaction, ephemeral=True)
 
-    # Build embed
-    embed = discord.Embed(title=f"ER:LC Logs ({len(logs)})", colour=0x1E77BE)
-    if guild:
-        icon = guild.icon.url if guild.icon else None
-        embed.set_author(name=guild.name, icon_url=icon)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
+    # Build and send embed
+    embed = build_erlc_embed(guild, logs)
+    await send_response(ctx_or_interaction, embed=embed, is_interaction=is_interaction)
 
-    if not logs:
-        embed.description = "There are no logs in-game."
-        if is_interaction:
-            return await ctx_or_interaction.followup.send(embed=embed)
-        else:
-            return await ctx_or_interaction.send(embed=embed)
 
-    # Format logs
-    lines = []
-    for entry in logs[:10]:
-        name, rid = parse_player(entry.get("Player"))
-        cmd = discord.utils.escape_markdown(entry.get("Command", ""))
-        ts = entry.get("Timestamp")
-        if isinstance(ts, (int, float)):
-            t = f"<t:{int(ts)}:F>"
-            if rid:
-                lines.append(f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
-            else:
-                lines.append(f"{name} used `{cmd}` at {t}")
+async def has_permission(user: discord.Member, guild: discord.Guild) -> bool:
+    """Check if the user has permission to run the command."""
+    if user.id == OWNER_ID:
+        return True
+    role = guild.get_role(staff_role_id)
+    return role and role in user.roles
 
-    if len(logs) > 10:
-        lines.append(f"...and {len(logs) - 10} more logs not shown.")
 
-    embed.description = "\n".join(lines)
-
-    # Send embed
+async def send_response(ctx_or_interaction, content=None, embed=None, is_interaction=False, ephemeral=False):
+    """Send a response depending on the context type."""
     if is_interaction:
-        await ctx_or_interaction.followup.send(embed=embed)
+        if content and not embed:
+            await ctx_or_interaction.followup.send(content, ephemeral=ephemeral)
+        else:
+            await ctx_or_interaction.followup.send(embed=embed, ephemeral=ephemeral)
     else:
-        await ctx_or_interaction.send(embed=embed)
+        if content and not embed:
+            await ctx_or_interaction.send(content)
+        else:
+            await ctx_or_interaction.send(embed=embed)
 
 # --- Handler: .erlc bans ---
 async def handle_erlc_bans(ctx):
@@ -2473,4 +2501,5 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
