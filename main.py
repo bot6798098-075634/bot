@@ -616,11 +616,15 @@ async def join_leave_log_task():
         player_str = entry.get("Player", "Unknown:0")
         joined = entry.get("Join", True)
 
+        # --------------------------------------------
         # Skip logs older than the last processed timestamp
+        # --------------------------------------------
         if ts <= last_joinleave_ts:
             continue
 
+        # --------------------------------------------
         # Parse username and Roblox ID
+        # --------------------------------------------
         try:
             username, id_str = player_str.split(":", 1)
             player_id = int(id_str)
@@ -628,14 +632,18 @@ async def join_leave_log_task():
             username = player_str
             player_id = 0
 
+        # --------------------------------------------
         # Create a clickable Roblox profile link if ID exists
+        # --------------------------------------------
         user_link = (
             f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
             if player_id
             else username
         )
 
-        # Check join/leave and if player was already seen
+        # --------------------------------------------
+        # Check join/leave and update seen_players
+        # --------------------------------------------
         if joined:
             if player_str not in seen_players:
                 join_events.append(f"{user_link} joined at <t:{ts}:F>")
@@ -647,14 +655,19 @@ async def join_leave_log_task():
                 seen_players.remove(player_str)  # Remove from seen players
                 print(f"[DEBUG] Player left: {player_str}")
 
+        # --------------------------------------------
         # Update last_joinleave_ts to latest timestamp processed
+        # --------------------------------------------
         if ts > last_joinleave_ts:
             last_joinleave_ts = ts
 
     # --------------------------------------------
-    # Helper: Send embed for events
+    # Helper function: Send embed for events
     # --------------------------------------------
     async def send_log_embed(channel, title, events, color=0x1E77BE):
+        # --------------------------------------------
+        # Skip sending if no events
+        # --------------------------------------------
         if not events:
             print(f"[DEBUG] No events to send for '{title}'")
             return
@@ -2913,6 +2926,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
