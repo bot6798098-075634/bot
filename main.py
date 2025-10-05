@@ -1568,11 +1568,74 @@ async def erlc_bans(interaction: discord.Interaction):
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+#--
+
+# --- Helper to parse Roblox user string ---
+def parse_player(player):
+    if not player:
+        return ("Unknown", None)
+    parts = player.rsplit(":", 1)
+    return (parts[0], parts[1]) if len(parts) == 2 else (player, None)
+
+
+#-
+
+
+@erlc_group.command(name="logs", description="Show ER:LC in-game command logs")
+async def erlc_logs(interaction: discord.Interaction):
+    user = interaction.user
+    if user.id != OWNER_ID:
+        role = interaction.guild.get_role(staff_role_id)
+        if not role or role not in user.roles:
+            return await interaction.response.send_message(
+                "❌ You don’t have permission to use this command.", ephemeral=True
+            )
+
+    await interaction.response.defer()
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                return await interaction.followup.send(
+                    f"⚠️ API error {r.status}", ephemeral=True
+                )
+            logs = await r.json()
+
+    embed = discord.Embed(title=f"ER:LC Logs ({len(logs)})", colour=0x1E77BE)
+
+    if interaction.guild:
+        icon = interaction.guild.icon.url if interaction.guild.icon else None
+        embed.set_author(name=interaction.guild.name, icon_url=icon)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    if not logs:
+        embed.description = "There are no logs in-game."
+        return await interaction.followup.send(embed=embed)
+
+    lines = []
+    for entry in logs[:10]:
+        name, rid = parse_player(entry.get("Player"))
+        cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+        ts = entry.get("Timestamp")
+        if isinstance(ts, (int, float)):
+            t = f"<t:{int(ts)}:F>"
+            if rid:
+                lines.append(f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
+            else:
+                lines.append(f"{name} used `{cmd}` at {t}")
+
+    if len(logs) > 10:
+        lines.append(f"...and {len(logs) - 10} more logs not shown.")
+
+    embed.description = "\n".join(lines)
+    await interaction.followup.send(embed=embed)
+
+#--
+
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
 @bot.command(name="erlc")
 async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: str = None):
-    """Prefix command: !erlc <subcommand> [args]"""
     if not subcommand:
         return await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
 
@@ -1585,19 +1648,88 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
         "command": handle_erlc_command,
         "teamkick": handle_erlc_teamkick,
         "bans": handle_erlc_bans,
+        "logs": handle_erlc_logs,
     }
 
     handler = handlers.get(subcommand)
     if not handler:
         return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
 
-    # Only pass extra args to handlers that need them
+    # Pass extra args only if needed
     if subcommand == "teamkick":
         await handler(ctx, roblox_user=roblox_user, reason=reason)
+    elif subcommand == "logs":
+        await handler(ctx, is_interaction=False)
     else:
         await handler(ctx)
 
+# --- Handler: erlc logs ---
+async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
+    user = ctx_or_interaction.user if is_interaction else ctx_or_interaction.author
+    guild = ctx_or_interaction.guild
 
+    # Permission check
+    if user.id != OWNER_ID:
+        role = guild.get_role(staff_role_id)
+        if not role or role not in user.roles:
+            msg = "❌ You don’t have permission to use this command."
+            if is_interaction:
+                return await ctx_or_interaction.response.send_message(msg, ephemeral=True)
+            else:
+                return await ctx_or_interaction.send(msg)
+
+    if is_interaction:
+        await ctx_or_interaction.response.defer()
+
+    # Fetch logs
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                msg = f"⚠️ API error {r.status}"
+                if is_interaction:
+                    return await ctx_or_interaction.followup.send(msg, ephemeral=True)
+                else:
+                    return await ctx_or_interaction.send(msg)
+            logs = await r.json()
+
+    # Build embed
+    embed = discord.Embed(title=f"ER:LC Logs ({len(logs)})", colour=0x1E77BE)
+    if guild:
+        icon = guild.icon.url if guild.icon else None
+        embed.set_author(name=guild.name, icon_url=icon)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    if not logs:
+        embed.description = "There are no logs in-game."
+        if is_interaction:
+            return await ctx_or_interaction.followup.send(embed=embed)
+        else:
+            return await ctx_or_interaction.send(embed=embed)
+
+    # Format logs
+    lines = []
+    for entry in logs[:10]:
+        name, rid = parse_player(entry.get("Player"))
+        cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+        ts = entry.get("Timestamp")
+        if isinstance(ts, (int, float)):
+            t = f"<t:{int(ts)}:F>"
+            if rid:
+                lines.append(f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
+            else:
+                lines.append(f"{name} used `{cmd}` at {t}")
+
+    if len(logs) > 10:
+        lines.append(f"...and {len(logs) - 10} more logs not shown.")
+
+    embed.description = "\n".join(lines)
+
+    # Send embed
+    if is_interaction:
+        await ctx_or_interaction.followup.send(embed=embed)
+    else:
+        await ctx_or_interaction.send(embed=embed)
 
 # --- Handler: .erlc bans ---
 async def handle_erlc_bans(ctx):
@@ -1646,7 +1778,6 @@ async def handle_erlc_bans(ctx):
 
 
 # --- Handler: .erlc teamkick ---
-# --- Handler: .erlc teamkick ---
 async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
         return await ctx.send(f"❌ Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
@@ -1685,6 +1816,8 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
 
     # Send success embed
     await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason), ephemeral=True)
+
+
 
 
 # --- Handler: .erlc info ---
@@ -1807,6 +1940,306 @@ async def report_erlc_error(ctx, exception, context):
     error_message = await get_erlc_error_message(0, exception=exception)
     await ctx.send(error_message)
     print(f"[ERROR] {context} failed: {exception}")
+
+
+
+
+
+#--
+
+SUGGESTION_CHANNEL_ID = 1343622169086918758 
+STAFF_SUGGESTION_CHANNEL_ID = 1373704702977376297 
+SUGGESTION_LOG_CHANNEL_ID = 1381267054354632745  
+STAFF_SUGGEST_LOG_CHANNEL_ID = 1381267054354632745  
+
+# ============================================================
+# LOGGING FUNCTION
+# ============================================================
+async def log_suggestion(action: str, suggester: discord.User, suggestion: str, channel: discord.TextChannel, guild: discord.Guild):
+    """
+    Logs a suggestion action (Created, Upvote, Downvote, Approved, Denied) to a channel.
+    """
+    embed = discord.Embed(
+        title=f"Suggestion Log: {action}",
+        description=suggestion,
+        color=0x1E77BE,
+    )
+
+    # Set guild name and icon if available
+    if guild.icon:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    else:
+        embed.set_author(name=guild.name)
+
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # Discord formatted user + timestamp
+    unix_ts = int(time.time())
+    embed.add_field(
+        name="User",
+        value=f"[{suggester}](https://discord.com/users/{suggester.id}) ({suggester.id})",
+        inline=True
+    )
+    embed.add_field(
+        name="Time",
+        value=f"<t:{unix_ts}:F>",
+        inline=True
+    )
+
+    await channel.send(embed=embed)
+
+
+# ============================================================
+# VIEW CLASS FOR SUGGESTIONS
+# ============================================================
+class SuggestionView(discord.ui.View):
+    def __init__(self, author: discord.User, approver_role_id=None, staff_mode=False):
+        super().__init__(timeout=None)
+        self.votes = {"up": set(), "down": set()}
+        self.author = author
+        self.staff_mode = staff_mode
+        self.approver_role_id = approver_role_id
+
+    async def update_embed(self, interaction: discord.Interaction):
+        embed = interaction.message.embeds[0]
+        embed.set_field_at(0, name="👍 Upvotes", value=str(len(self.votes["up"])), inline=True)
+        embed.set_field_at(1, name="👎 Downvotes", value=str(len(self.votes["down"])), inline=True)
+        await interaction.message.edit(embed=embed, view=self)
+
+        # Log upvote/downvote
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            last_user = interaction.user
+            if last_user.id in self.votes["up"]:
+                action = "Upvote"
+            elif last_user.id in self.votes["down"]:
+                action = "Downvote"
+            else:
+                action = "Vote Removed"
+            await log_suggestion(action, last_user, embed.description, log_channel, interaction.guild)
+
+    @discord.ui.button(label="Upvote", style=discord.ButtonStyle.green, emoji="👍", row=0)
+    async def upvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid in self.votes["up"]:
+            self.votes["up"].remove(uid)
+        else:
+            self.votes["up"].add(uid)
+            self.votes["down"].discard(uid)
+        await self.update_embed(interaction)
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Downvote", style=discord.ButtonStyle.red, emoji="👎", row=0)
+    async def downvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid in self.votes["down"]:
+            self.votes["down"].remove(uid)
+        else:
+            self.votes["down"].add(uid)
+            self.votes["up"].discard(uid)
+        await self.update_embed(interaction)
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.blurple, emoji=f"{tick_emoji}", row=1)
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        approver_role = discord.utils.get(interaction.guild.roles, id=self.approver_role_id)
+        if approver_role not in interaction.user.roles:
+            embed = discord.Embed(
+                description=f"{staff_emoji} You don't have permission to approve this suggestion.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.green()
+        embed.title = f"{tick_emoji} {embed.title} (Approved)"
+        await interaction.message.edit(embed=embed, view=None)
+
+        # DM author
+        try:
+            dm_embed = discord.Embed(
+                title=f"{tick_emoji} Your suggestion was approved!",
+                description=embed.description,
+                color=discord.Color.green()
+            )
+            await self.author.send(embed=dm_embed)
+        except discord.Forbidden:
+            pass
+
+        # Log approval
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            await log_suggestion("Approved", interaction.user, embed.description, log_channel, interaction.guild)
+
+        confirm = discord.Embed(description=f"{tick_emoji} Suggestion approved.", color=discord.Color.green())
+        await interaction.response.send_message(embed=confirm, ephemeral=True)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.gray, emoji=f"{failed_emoji}", row=1)
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        approver_role = discord.utils.get(interaction.guild.roles, id=self.approver_role_id)
+        if approver_role not in interaction.user.roles:
+            embed = discord.Embed(
+                description=f"{staff_emoji} You don't have permission to deny this suggestion.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.red()
+        embed.title = f"{failed_emoji} {embed.title} (Denied)"
+        await interaction.message.edit(embed=embed, view=None)
+
+        # DM author
+        try:
+            dm_embed = discord.Embed(
+                title=f"{failed_emoji} Your suggestion was denied.",
+                description=embed.description,
+                color=discord.Color.red()
+            )
+            await self.author.send(embed=dm_embed)
+        except discord.Forbidden:
+            pass
+
+        # Log denial
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            await log_suggestion("Denied", interaction.user, embed.description, log_channel, interaction.guild)
+
+        confirm = discord.Embed(description=f"{error_emoji} Suggestion denied.", color=discord.Color.red())
+        await interaction.response.send_message(embed=confirm, ephemeral=True)
+
+# ============================================================
+# HELPER FUNCTION
+# ============================================================
+async def post_suggestion(user: discord.User, suggestion: str, guild: discord.Guild, staff_mode=False):
+    """Post a suggestion embed to the correct channel."""
+    channel_id = STAFF_SUGGESTION_CHANNEL_ID if staff_mode else SUGGESTION_CHANNEL_ID
+    log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if staff_mode else SUGGESTION_LOG_CHANNEL_ID
+    channel = bot.get_channel(channel_id)
+    log_channel = bot.get_channel(log_channel_id)
+    if not channel:
+        return None, log_channel
+
+    title = "💡 New Staff Suggestion" if staff_mode else "💡 New Suggestion"
+    color = 0x1E77BE if staff_mode else 0x1E77BE
+
+    embed = discord.Embed(title=title, description=suggestion, color=color)
+    if guild.icon:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    else:
+        embed.set_author(name=guild.name)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    embed.add_field(name="👍 Upvotes", value="0", inline=True)
+    embed.add_field(name="👎 Downvotes", value="0", inline=True)
+
+    approver_role_id = management_role_id if staff_mode else staff_role_id
+    view = SuggestionView(author=user, approver_role_id=approver_role_id, staff_mode=staff_mode)
+    msg = await channel.send(embed=embed, view=view)
+
+    # ✅ Pass guild here!
+    if log_channel:
+        await log_suggestion("Created", user, suggestion, log_channel, guild)
+
+    return msg
+
+
+# ============================================================
+# PREFIX COMMANDS
+# ============================================================
+
+# Public suggestion
+@bot.command(name="suggest")
+async def suggest(ctx, *, suggestion: str = None):
+    if not suggestion:
+        embed = discord.Embed(
+            title=f"{error_emoji} Missing Suggestion",
+            description="Usage: `!suggest <your idea>`",
+            color=discord.Color.orange()
+        )
+        await ctx.send(embed=embed)
+        return
+
+    msg = await post_suggestion(ctx.author, suggestion, ctx.guild, staff_mode=False)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await ctx.send(embed=embed)
+
+# Staff suggestion
+@bot.command(name="staff")
+async def staff(ctx, subcommand: str = None, *, suggestion: str = None):
+    staff_role = discord.utils.get(ctx.guild.roles, id=staff_role_id)
+    if staff_role not in ctx.author.roles:
+        embed = discord.Embed(description=f"{staff_emoji} You must be staff to use this.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    if subcommand is None:
+        embed = discord.Embed(
+            title=f"{staff_emoji} Staff Command Help",
+            description="Subcommands:\n`!staff suggest <idea>` — submit a staff suggestion.",
+            color=0x1E77BE
+        )
+        await ctx.send(embed=embed)
+        return
+
+    if subcommand.lower() == "suggest":
+        if not suggestion:
+            embed = discord.Embed(
+                title=f"{error_emoji} Missing Suggestion",
+                description="Usage: `!staff suggest <idea>`",
+                color=0x1E77BE
+            )
+            await ctx.send(embed=embed)
+            return
+
+        msg = await post_suggestion(ctx.author, suggestion, ctx.guild, staff_mode=True)
+        if msg:
+            embed = discord.Embed(description=f"{tick_emoji} Your staff suggestion has been submitted!", color=discord.Color.green())
+        else:
+            embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"{failed_emoji} Unknown Subcommand",
+                              description=f"`{subcommand}` is not valid. Try `!staff suggest <idea>`.",
+                              color=discord.Color.red())
+        await ctx.send(embed=embed)
+
+# ============================================================
+# SLASH COMMANDS
+# ============================================================
+
+# Public
+@bot.tree.command(name="suggest", description="Submit a public suggestion.")
+async def suggest(interaction: discord.Interaction, suggestion: str):
+    msg = await post_suggestion(interaction.user, suggestion, interaction.guild, staff_mode=False)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@staff_group.command(name="suggest", description="Submit a staff-only suggestion.")
+async def staff_suggest(interaction: discord.Interaction, suggestion: str):
+    staff_role = discord.utils.get(interaction.guild.roles, id=staff_role_id)
+    if staff_role not in interaction.user.roles:
+        embed = discord.Embed(description=f"{staff_emoji} You must be staff to use this.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    msg = await post_suggestion(interaction.user, suggestion, interaction.guild, staff_mode=True)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your staff suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ---------------------- commmand info ----------------------
 
@@ -2040,3 +2473,4 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
