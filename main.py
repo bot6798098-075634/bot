@@ -3044,7 +3044,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN_BATA")
+        token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
@@ -3059,4 +3059,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
+
         print(f"🔥 Unexpected error occurred: {e}")
