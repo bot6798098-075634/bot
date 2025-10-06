@@ -2751,7 +2751,7 @@ async def erlc_welcome_task():
 
 TOTAL_CHANNEL_ID = 1424779511588847616  # Voice channel for total members
 HUMAN_CHANNEL_ID = 1424779529863303369  # Voice channel for human members
-BOT_CHANNEL_ID = 1424779551342592131  # Voice channel for bots
+BOT_CHANNEL_ID = 1424779551342592131    # Voice channel for bots
 
 # Prefixes (emojis or text)
 total_vc_prefix = "👥 Total Members:"
@@ -2781,11 +2781,10 @@ async def update_member_count_vcs():
 
     except discord.HTTPException as e:
         # print(f"[DEBUG] Failed to update VC names: {e}")
-        pass
-
+        return
     except Exception as e:
         # print(f"[DEBUG] Unexpected error in update_member_count_vcs: {e}")
-        pass
+        raise  # safer than pass, so errors still show in logs
 
 
 async def update_vc_name(guild, channel_id, new_name):
@@ -2793,16 +2792,16 @@ async def update_vc_name(guild, channel_id, new_name):
     channel = guild.get_channel(channel_id)
     if not channel or not isinstance(channel, discord.VoiceChannel):
         return
-
     if channel.name != new_name:
-  #      print(f"[DEBUG] Renaming {channel.name} → {new_name}")
+        # print(f"[DEBUG] Renaming {channel.name} → {new_name}")
         await channel.edit(name=new_name)
 
 
 @update_member_count_vcs.before_loop
 async def before_update_member_count_vcs():
     await bot.wait_until_ready()
-  #  print("[DEBUG] VC counter task started.")
+    # print("[DEBUG] VC counter task started.")
+
 
 # ---------------------- commmand info ----------------------
 
@@ -3061,5 +3060,3 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
-
-
