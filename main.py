@@ -939,6 +939,7 @@ async def team_join_leave_log_task():
       #  print("[DEBUG] Sent team join/leave embeds.")
     else:
        # print("[DEBUG] No team changes detected.")
+       pass
 
 
 # --- Helper Functions ---
@@ -3060,4 +3061,5 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
