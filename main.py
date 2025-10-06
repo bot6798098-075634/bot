@@ -92,7 +92,7 @@ session: aiohttp.ClientSession | None = None
 
 erlc_group = app_commands.Group(name="erlc", description="ERLC related commands")
 discord_group = app_commands.Group(name="discord", description="Discord-related commands")
-
+staff_group = app_commands.Group(name="staff", description="Staff-only commands")
 
 # ========================= Bot on_ready =========================
 
@@ -3060,3 +3060,4 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
