@@ -2750,12 +2750,12 @@ async def erlc_welcome_task():
 
 TOTAL_CHANNEL_ID = 1424779511588847616  # Voice channel for total members
 HUMAN_CHANNEL_ID = 1424779529863303369  # Voice channel for human members
-BOT_CHANNEL_ID   = 1424779551342592131  # Voice channel for bots
+BOT_CHANNEL_ID = 1424779551342592131  # Voice channel for bots
 
 # Prefixes (emojis or text)
 total_vc_prefix = "👥 Total Members:"
 human_vc_prefix = "🙎 Humans:"
-bot_vc_prefix   = "🤖 Bots:"
+bot_vc_prefix = "🤖 Bots:"
 
 # === VC COUNTER TASK ===
 @tasks.loop(seconds=600)  # Update every 10 minutes
@@ -3060,14 +3060,3 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
-
-
-
-
-
-
-
-
-
-
-
