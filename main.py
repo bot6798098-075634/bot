@@ -3059,5 +3059,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
-
         print(f"🔥 Unexpected error occurred: {e}")
