@@ -36,8 +36,15 @@ import shutil
 
 # ========================= Helpers =========================
 
-COMMAND_PREFIX = "."
-BOT_VERSION = "v1.0.1"
+COMMAND_PREFIX = "." # Prefix for commands
+BOT_VERSION = "v1.0.2" # version
+seen_players = set()  # Tracks players to avoid duplicate logs
+last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
+
+# ========================= On/Off =========================
+
+welcome_status = True  # True = on, False = off
+erlc_welcome_status = True  # False = off, True = on
 
 # ========================= Other =========================
 
@@ -93,42 +100,130 @@ session: aiohttp.ClientSession | None = None  # global session
 
 @bot.event
 async def on_ready():
+    # --------------------------------------------
+    # Declare global variables to be used/modified
+    # --------------------------------------------
+    global session, seen_players, erlc_welcome_status, join_leave_status, last_joinleave_ts
+
+    # ⚡ Debug: Bot is starting up
+    print("⚡ Bot starting...")
+
+    # --------------------------------------------
+    # Initialize global variables if they don't exist
+    # --------------------------------------------
+    if 'seen_players' not in globals():
+        # Set to keep track of players we have already seen in join logs
+        seen_players = set()
+    if 'erlc_welcome_status' not in globals():
+        # Boolean flag to enable/disable ER:LC welcome messages
+        erlc_welcome_status = False
+    if 'join_leave_status' not in globals():
+        # Boolean flag to control join/leave logging
+        join_leave_status = False
+    if 'last_joinleave_ts' not in globals():
+        # Timestamp of the latest join/leave log processed
+        last_joinleave_ts = 0
+
+    # --------------------------------------------
+    # Register slash command groups
+    # --------------------------------------------
     try:
-        # Register groups BEFORE syncing
+        # Add command groups to bot's command tree
         bot.tree.add_command(erlc_group)
         bot.tree.add_command(discord_group)
+        bot.tree.add_command(staff_group)
 
-        # Global sync
+        # Sync commands globally
         await bot.tree.sync()
-        print("Slash commands synced!")
-
+        print("✅ Slash commands synced!")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
-    bot.start_time = datetime.now(timezone.utc)
+    # --------------------------------------------
+    # Set bot startup time
+    # --------------------------------------------
+    bot.start_time = datetime.now(timezone.utc)  # timezone-aware UTC time
+    print(f"Bot start time set to {bot.start_time.isoformat()}")
 
-    global session
+    # --------------------------------------------
+    # Initialize aiohttp session if not already open
+    # --------------------------------------------
     if session is None or session.closed:
+        # aiohttp session used for API requests
         session = aiohttp.ClientSession()
+        print("✅ aiohttp session started")
 
-    # Start background tasks
+    # --------------------------------------------
+    # Initialize seen players from ER:LC join logs
+    # --------------------------------------------
     try:
-        join_leave_log_task.start()
-        kill_log_task.start()
-        modcall_log_task.start()
-        team_join_leave_log_task.start()
-        update_vc_status.start()
-        discord_check_task.start()
+        # Fetch join logs from API
+        joinlogs = await fetch_joinlogs()
+        max_ts = 0  # Track the latest timestamp
+
+        # Loop through all join log entries
+        for entry in joinlogs:
+            ts = entry.get("Timestamp", 0)  # Timestamp of this log
+            player = entry.get("Player")    # Player string (username:ID)
+
+            # Only add players who joined to the seen_players set
+            if player and entry.get("Join"):
+                seen_players.add(player)
+
+            # Update max timestamp seen
+            if ts > max_ts:
+                max_ts = ts
+
+        # Set last_joinleave_ts to latest timestamp to ignore old logs
+        last_joinleave_ts = max_ts
+        print(f"✅ Initialized seen_players with {len(seen_players)} entries, last_joinleave_ts={last_joinleave_ts}")
+
+    except Exception as e:
+        # Handle errors fetching join logs
+        print(f"⚠️ Failed to initialize seen_players: {e}")
+
+    # --------------------------------------------
+    # Start all background tasks
+    # --------------------------------------------
+    try:
+        # Tasks for logging joins/leaves, kills, mod calls, etc.
+        join_leave_log_task.start()        # Logs new join/leave events
+        kill_log_task.start()              # Logs kill events
+        modcall_log_task.start()           # Logs moderator calls
+        team_join_leave_log_task.start()   # Logs team join/leave events
+        update_vc_status.start()           # Updates VC status regularly
+        discord_check_task.start()         # Checks for Discord related events
+        erlc_welcome_task.start()          # Sends ER:LC welcome messages
+        update_member_count_vcs.start()   # Updates member count in VCs
+        print("✅ Background tasks started")
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
 
+    # --------------------------------------------
+    # Start presence updater task
+    # --------------------------------------------
+    update_presence.start()
+    print("✅ Presence updater started")
+
+    # --------------------------------------------
+    # Final debug info: bot is fully connected
+    # --------------------------------------------
+    print(f"{bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
+    print("-----------------------------------------------------------------------")
+
+
+@tasks.loop(count=1)
+async def update_presence():
     await bot.change_presence(
         status=discord.Status.dnd,
-        activity=discord.Activity(type=discord.ActivityType.watching, name="over the server")
+        activity=discord.Activity(type=discord.ActivityType.watching, name="over the server"),
     )
+    await asyncio.sleep(300)
 
-    print(f"{bot.user}({bot.user.id}) has connected to Discord and is watching over the server.")
-    print("-----------------------------------------------------------------------")
+    await bot.change_presence(
+        status=discord.Status.dnd,
+        activity=discord.Activity(type=discord.ActivityType.watching, name=".commands"),
+    )
 
 # ========================= Emojis =========================
 
@@ -446,11 +541,11 @@ async def restart(ctx):
 # ---------------------- ERLC setup ----------------------
 
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-KILL_LOG_CHANNEL_ID = 1381267054354632745
-MODCALL_LOG_CHANNEL_ID = 1381267054354632745
-TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-COMMAND_LOG_CHANNEL_ID = 1381267054354632745
+JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+KILL_LOG_CHANNEL_ID = 1382852078048907274
+MODCALL_LOG_CHANNEL_ID = 1382852078048907274
+TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+COMMAND_LOG_CHANNEL_ID = 1382852078048907274
  
 API_KEY = os.getenv("API_KEY")
 API_BASE = os.getenv("API_BASE")
@@ -466,94 +561,142 @@ HEADERS_POST = {
 }
 
 # ---------------------- join/leave logs ----------------------
+# --------------------------------------------
+# Helper Function: Send Embed
+# --------------------------------------------
+# --------------------------------------------
+# Helper Function: Send Embed
+# --------------------------------------------
+async def send_joinleave_log_embed(channel, title, events, color=0x1E77BE):
+    """Sends a formatted embed with the provided events list to Discord."""
+    if not events:
+        print(f"[DEBUG] No events to send for '{title}'")
+        return
 
-@tasks.loop(seconds=60)
+    embed = discord.Embed(
+        title=title,
+        description="\n".join(events),
+        colour=color
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
+
+    print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
+
+
+
+# --------------------------------------------
+# Helper Function: Parse player info
+# --------------------------------------------
+def parse_player(player_str):
+    """Return (username, player_id)"""
+    try:
+        username, id_str = player_str.split(":", 1)
+        return username, int(id_str)
+    except (ValueError, AttributeError):
+        return player_str, 0
+
+
+# --------------------------------------------
+# Helper Function: Format player link
+# --------------------------------------------
+def format_player_link(username, player_id):
+    if player_id:
+        return f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
+    return username
+
+
+# --------------------------------------------
+# Helper Function: Process join/leave logs
+# --------------------------------------------
+def process_join_leave(entry, seen_players):
+    ts = entry.get("Timestamp", 0)
+    player_str = entry.get("Player", "Unknown:0")
+    joined = entry.get("Join", True)
+    
+    username, player_id = parse_player(player_str)
+    user_link = format_player_link(username, player_id)
+
+    join_event, leave_event = None, None
+
+    if joined:
+        if player_str not in seen_players:
+            join_event = f"{user_link} joined at <t:{ts}:F>"
+            seen_players.add(player_str)
+           # print(f"[DEBUG] Player joined: {player_str}")
+    else:
+        if player_str in seen_players:
+            leave_event = f"{user_link} left at <t:{ts}:F>"
+            seen_players.remove(player_str)
+           # print(f"[DEBUG] Player left: {player_str}")
+
+    return ts, join_event, leave_event
+
+
+# --------------------------------------------
+# Background Task: Check ER:LC Join/Leave Logs
+# --------------------------------------------
+@tasks.loop(seconds=120)
 async def join_leave_log_task():
-    global session
-    if not session:
-        session = aiohttp.ClientSession()
+    global session, last_joinleave_ts, seen_players
 
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+       # print("[DEBUG] aiohttp session started in join_leave_log_task")
+
+ #   print("[DEBUG] join_leave_log_task running...")
+
+    # Fetch join logs
     try:
         async with session.get(f"{API_BASE}/joinlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch join logs: {resp.status}")
+             #   print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
                 return
             data = await resp.json()
+         #   print(f"[DEBUG] Fetched {len(data)} join log entries")
     except Exception as e:
-        print(f"Error fetching join logs: {e}")
+    #    print(f"[DEBUG] Exception fetching join logs: {e}")
         return
 
     if not data:
+      #  print("[DEBUG] No join logs returned")
         return
 
-    # Get the channel (from cache or API)
+    # Fetch Discord channel
     channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
         try:
             channel = await bot.fetch_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
         except Exception as e:
-            print(f"Failed to fetch join/leave log channel: {e}")
+          #  print(f"[DEBUG] Failed to fetch join/leave log channel: {e}")
             return
-
-    if not hasattr(join_leave_log_task, "last_ts"):
-        join_leave_log_task.last_ts = 0
 
     join_events, leave_events = [], []
 
+    # Process each log
     for entry in data:
-        ts = entry.get("Timestamp", 0)
-        if ts <= join_leave_log_task.last_ts:
+        ts, join_event, leave_event = process_join_leave(entry, seen_players)
+        if ts <= last_joinleave_ts:
             continue
+        if join_event:
+            join_events.append(join_event)
+        if leave_event:
+            leave_events.append(leave_event)
+        last_joinleave_ts = max(last_joinleave_ts, ts)
 
-        player_str = entry.get("Player", "Unknown:0")
-        joined = entry.get("Join", True)
-
-        # Parse username and Roblox ID
-        try:
-            username, id_str = player_str.split(":", 1)
-            player_id = int(id_str)
-        except (ValueError, AttributeError):
-            username = player_str
-            player_id = 0
-
-        user_link = (
-            f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
-            if player_id
-            else username
-        )
-
-        if joined:
-            join_events.append(f"{user_link} joined at <t:{ts}:F>")
-        else:
-            leave_events.append(f"{user_link} left at <t:{ts}:F>")
-
-        # Update last timestamp
-        join_leave_log_task.last_ts = max(join_leave_log_task.last_ts, ts)
-
-    # Send a single embed for all joins
+    # Send embeds
     if join_events:
-        embed = discord.Embed(
-            title="Join Log",
-            description="\n".join(join_events),
-            colour=0x00f529
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
-
-    # Send a single embed for all leaves
+        await send_joinleave_log_embed(channel, "Join Log", join_events, 0x00f529)
     if leave_events:
-        embed = discord.Embed(
-            title="Leave Log",
-            description="\n".join(leave_events),
-            colour=0xf50000
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
+        await send_joinleave_log_embed(channel, "Leave Log", leave_events, 0xf50000)
 
 # -
 
-# Helper function to process raw kill log entries
+# --------------------------------------------
+# Helper Function: Format Kill Entry
+# --------------------------------------------
 def format_kill_entry(entry: dict) -> str:
+    """Formats a raw kill log entry into a readable Discord message."""
     ts = entry.get("Timestamp", 0)
     killer_raw = entry.get("Killer", "Unknown:0")
     victim_raw = entry.get("Killed", "Unknown:0")
@@ -569,85 +712,130 @@ def format_kill_entry(entry: dict) -> str:
     else:
         victim_name, victim_id = victim_raw, "0"
 
-    # Build Roblox profile links if ID is valid
+    # Build Roblox profile links if IDs are valid
     killer_link = f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)" if killer_id != "0" else killer_name
     victim_link = f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)" if victim_id != "0" else victim_name
 
     return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
 
-# ---------------------- kill logs ----------------------
 
-@tasks.loop(seconds=60)
+# --------------------------------------------
+# Background Task: Check ER:LC Kill Logs
+# --------------------------------------------
+@tasks.loop(seconds=120)
 async def kill_log_task():
+    """Polls the ER:LC kill logs API and sends updates to Discord."""
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started in kill_log_task")
+
+ #   print("[DEBUG] kill_log_task running...")
+
+    # Fetch kill logs from API
     try:
         async with session.get(f"{API_BASE}/killlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch kill logs: {resp.status}")
+               # print(f"[DEBUG] Failed to fetch kill logs: {resp.status}")
                 return
             data = await resp.json()
+        #    print(f"[DEBUG] Fetched {len(data)} kill log entries")
     except Exception as e:
-        print(f"Error fetching kill logs: {e}")
+    #    print(f"[DEBUG] Exception fetching kill logs: {e}")
         return
 
     if not data:
+    #    print("[DEBUG] No kill logs returned")
         return
 
-    channel = bot.get_channel(KILL_LOG_CHANNEL_ID) or await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
+    # Get channel
+    channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
+        except Exception as e:
+           # print(f"[DEBUG] Failed to fetch kill log channel: {e}")
+            return
+
+    # Initialize timestamp tracker on first run
     if not hasattr(kill_log_task, "last_ts"):
-        kill_log_task.last_ts = 0
+        # ⛔ Skip sending old logs from before bot start
+        kill_log_task.last_ts = max(entry.get("Timestamp", 0) for entry in data)
+     #   print(f"[DEBUG] Initialized kill_log_task.last_ts = {kill_log_task.last_ts} (skipping old logs)")
+        return
 
     kill_events = []
+    latest_ts = kill_log_task.last_ts
+
     for entry in data:
         ts = entry.get("Timestamp", 0)
         if ts <= kill_log_task.last_ts:
-            continue
+            continue  # Skip old logs
         kill_events.append(format_kill_entry(entry))
-        kill_log_task.last_ts = max(kill_log_task.last_ts, ts)
+        latest_ts = max(latest_ts, ts)
 
-    if kill_events:
-        embed = discord.Embed(
-            title="Kill Log",
-            description="\n".join(kill_events),
-            colour=0xffa200
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
+    kill_log_task.last_ts = latest_ts  # Update last processed timestamp
+
+    if not kill_events:
+      #  print("[DEBUG] No new kill events since last check")
+        return
+
+    # Send embed
+    embed = discord.Embed(
+        title="Kill Log",
+        description="\n".join(kill_events),
+        colour=0xffa200
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
+
+   # print(f"[DEBUG] Sent Kill Log embed with {len(kill_events)} new entries")
 
 # ---------------------- mocall logs ----------------------
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=120)
 async def modcall_log_task():
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    # Ensure aiohttp session exists
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started for modcall_log_task")
+
+    #print("[DEBUG] modcall_log_task running...")
+
+    # Fetch modcall logs from ER:LC API
     try:
         async with session.get(f"{API_BASE}/modcalls", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch modcall logs: {resp.status}")
+           #     print(f"[DEBUG] Failed to fetch modcall logs: {resp.status}")
                 return
             data = await resp.json()
+          #  print(f"[DEBUG] Fetched {len(data)} modcall log entries")
     except Exception as e:
-        print(f"Error fetching modcall logs: {e}")
+       # print(f"[DEBUG] Exception fetching modcall logs: {e}")
         return
 
     if not data:
+      #  print("[DEBUG] No modcall logs returned")
         return
 
+    # Get or fetch the channel
     channel = bot.get_channel(MODCALL_LOG_CHANNEL_ID)
     if not channel:
         try:
             channel = await bot.fetch_channel(MODCALL_LOG_CHANNEL_ID)
         except Exception as e:
-            print(f"Failed to fetch modcall log channel: {e}")
+        #    print(f"[DEBUG] Failed to fetch modcall log channel: {e}")
             return
 
+    # Track last processed timestamp
     if not hasattr(modcall_log_task, "last_ts"):
-        modcall_log_task.last_ts = 0
+        # Initialize to the latest log on startup — this prevents old logs from sending
+        modcall_log_task.last_ts = max((int(e.get("Timestamp", 0)) for e in data), default=0)
+     #   print(f"[DEBUG] Initialized modcall_log_task.last_ts = {modcall_log_task.last_ts} (skipping old logs)")
+        return  # Skip sending logs on first run
 
     modcall_events = []
 
@@ -656,7 +844,7 @@ async def modcall_log_task():
         if ts <= modcall_log_task.last_ts:
             continue
 
-        # Caller
+        # Parse Caller
         caller_raw = entry.get("Caller", "Unknown:0")
         try:
             caller_name, caller_id_str = caller_raw.split(":", 1)
@@ -664,7 +852,7 @@ async def modcall_log_task():
         except (ValueError, AttributeError):
             caller_name, caller_id = caller_raw, 0
 
-        # Moderator (responder) — may be missing if not yet taken
+        # Parse Moderator (optional)
         moderator_raw = entry.get("Moderator")
         if moderator_raw:
             try:
@@ -675,6 +863,7 @@ async def modcall_log_task():
         else:
             mod_name, mod_id = "Unassigned", 0
 
+        # Build clickable links
         caller_link = (
             f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)"
             if caller_id else caller_name
@@ -684,11 +873,10 @@ async def modcall_log_task():
             if mod_id else mod_name
         )
 
-        modcall_events.append(
-            f"{moderator_link} responded to {caller_link} at <t:{ts}:F>"
-        )
-
+        # Build formatted event string
+        modcall_events.append(f"{moderator_link} responded to {caller_link} at <t:{ts}:F>")
         modcall_log_task.last_ts = max(modcall_log_task.last_ts, ts)
+      #  print(f"[DEBUG] Processed new modcall log: {moderator_link} -> {caller_link} at {ts}")
 
     # Send all new modcalls in one embed
     if modcall_events:
@@ -699,30 +887,58 @@ async def modcall_log_task():
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await channel.send(embed=embed)
+     #   print(f"[DEBUG] Sent {len(modcall_events)} new modcall events")
 
 # ---------------------- team join/leave logs ----------------------
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=125)
 async def team_join_leave_log_task():
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    # Ensure session exists
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started for team_join_leave_log_task")
+
+ #   print("[DEBUG] team_join_leave_log_task running...")
+
+    # Fetch players from API
     players = await fetch_players()
     if not players:
+     #   print("[DEBUG] No players fetched, skipping.")
         return
 
+    # Get the Discord channel
     channel = await get_team_log_channel()
     if not channel:
+     #   print("[DEBUG] Failed to get team log channel, skipping.")
         return
 
+    # On first run, initialize state and skip sending
     if not hasattr(team_join_leave_log_task, "last_team_state"):
-        team_join_leave_log_task.last_team_state = {}
+        team_join_leave_log_task.last_team_state = {parse_player_id(p.get("Player", "Unknown:0"))[1]:
+                                                    normalize_team_name(p.get("Team")) for p in players}
+      #  print("[DEBUG] Initialized team state (skipping old team logs on startup)")
+        return
 
+    # Compute changes since last run
     join_events, leave_events = compute_team_changes(players, team_join_leave_log_task.last_team_state)
 
-    await send_log_embed(channel, "Team Join Log", join_events)
-    await send_log_embed(channel, "Team Leave Log", leave_events)
+    # Combine and send logs (with delay to batch quick changes)
+    if join_events or leave_events:
+     #   print(f"[DEBUG] Found {len(join_events)} joins and {len(leave_events)} leaves.")
+      #  print("[DEBUG] Waiting 10 seconds before sending team logs to allow batching...")
+        await asyncio.sleep(10)  # delay to prevent spam when users switch fast
+
+        # Re-check if new events appeared during delay (optional — can skip)
+        # No re-fetch here to keep simple
+
+        # Send batched logs
+        await send_team_joinleave__log_embed(channel, "Team Join Log", join_events)
+        await send_team_joinleave__log_embed(channel, "Team Leave Log", leave_events)
+      #  print("[DEBUG] Sent team join/leave embeds.")
+    else:
+       # print("[DEBUG] No team changes detected.")
 
 
 # --- Helper Functions ---
@@ -731,11 +947,13 @@ async def fetch_players():
     try:
         async with session.get(f"{API_BASE}/players", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch players: {resp.status}")
+               # print(f"[DEBUG] Failed to fetch players: {resp.status}")
                 return []
-            return await resp.json()
+            data = await resp.json()
+          #  print(f"[DEBUG] Fetched {len(data)} players")
+            return data
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-        print(f"Error fetching players: {e}")
+      #  print(f"[DEBUG] Error fetching players: {e}")
         return []
 
 
@@ -746,7 +964,7 @@ async def get_team_log_channel():
     try:
         return await bot.fetch_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
     except discord.DiscordException as e:
-        print(f"Failed to fetch team log channel: {e}")
+     #   print(f"[DEBUG] Failed to fetch team log channel: {e}")
         return None
 
 
@@ -808,7 +1026,7 @@ def process_team_change(join_events, leave_events, previous_team, current_team, 
         join_events.append(f"{text} at <t:{ts}:F>")
 
 
-async def send_log_embed(channel, title, events):
+async def send_team_joinleave__log_embed(channel, title, events):
     if not events:
         return
     embed = discord.Embed(
@@ -834,21 +1052,21 @@ def get_erlc_error_message(http_status: int, api_code: int = None, exception: Ex
         422: f"{error_emoji} **422 – No Players**: The private server has no players in it.",
 
         # API codes
-        0: f"{error_emoji} **0 – Unknown Error**: Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
-        1001: f"{error_emoji} **1001 – Communication Error**: An error occurred communicating with Roblox / the in-game private server.",
-        1002: f"{error_emoji} **1002 – System Error**: An internal system error occurred.",
-        2000: f"{error_emoji} **2000 – Missing Server Key**: You did not provide a server-key.",
-        2001: f"{error_emoji} **2001 – Bad Server Key Format**: You provided an incorrectly formatted server-key.",
-        2002: f"{error_emoji} **2002 – Invalid Server Key**: You provided an invalid (or expired) server-key.",
-        2003: f"{error_emoji} **2003 – Invalid Global API Key**: You provided an invalid global API key.",
-        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is currently banned from accessing the API.",
-        3001: f"{error_emoji} **3001 – Missing Command**: You did not provide a valid command in the request body.",
-        3002: f"{error_emoji} **3002 – Server Offline**: The server you are attempting to reach is currently offline (has no players).",
-        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited.",
-        4002: f"{error_emoji} **4002 – Command Restricted**: The command you are attempting to run is restricted.",
-        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you're trying to send is prohibited.",
-        9998: f"{error_emoji} **9998 – Resource Restricted**: The resource you are accessing is restricted.",
-        9999: f"{error_emoji} **9999 – Module Outdated**: The module running on the in-game server is out of date, please kick all and try again."
+        0: "Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
+        1001: "An error occurred communicating with Roblox / the in-game private server.",
+        1002: "An internal system error occurred.",
+        2000: "You did not provide a server-key.",
+        2001: "You provided an incorrectly formatted server-key.",
+        2002: "You provided an invalid (or expired) server-key.",
+        2003: "You provided an invalid global API key.",
+        2004: "Your server-key is currently banned from accessing the API.",
+        3001: "You did not provide a valid command in the request body.",
+        3002: "The server you are attempting to reach is currently offline (has no players).",
+        4001: "You are being rate limited.",
+        4002: "The command you are attempting to run is restricted.",
+        4003: "The message you're trying to send is prohibited.",
+        9998: "The resource you are accessing is restricted.",
+        9999: "The module running on the in-game server is out of date, please kick all and try again."
     }
 
     # If exception exists but status is 0, just show exception
@@ -1289,7 +1507,7 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
     return None
 
 # --- Loop task: players + queue ---
-@tasks.loop(seconds=140)
+@tasks.loop(seconds=120)
 async def update_vc_status():
     #logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
@@ -1437,11 +1655,19 @@ async def send_to_game(command: str):
                     except Exception:
                         api_code = None
 
+                    # Check for Server Offline (3002) and ignore it
+                    if api_code == 3002 or "3002" in str(await resp.text()):
+                    #    print(f"[DEBUG {datetime.now(timezone.utc)}] Server offline, cannot send command: {command}")
+                        return
+
+                    # Otherwise, raise the error as usual
                     err_msg = get_erlc_error_message(resp.status, api_code)
                     raise Exception(err_msg)
+
         except Exception as e:
+            # Catch all other exceptions and log
             err_msg = get_erlc_error_message(0, exception=e)
-            raise Exception(err_msg)
+           # print(f"[DEBUG {datetime.now(timezone.utc)}] Exception sending command: {err_msg}")
 
 
 async def run_teamkick_sequence(roblox_user: str, reason: str):
@@ -1568,11 +1794,124 @@ async def erlc_bans(interaction: discord.Interaction):
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+#--
+
+# --- Helper to parse Roblox user string ---
+def parse_player(player):
+    if not player:
+        return ("Unknown", None)
+    parts = player.rsplit(":", 1)
+    return (parts[0], parts[1]) if len(parts) == 2 else (player, None)
+
+
+#-
+
+
+@erlc_group.command(name="logs", description="Show ER:LC in-game command logs")
+async def erlc_logs(interaction: discord.Interaction):
+    user = interaction.user
+    if user.id != OWNER_ID:
+        role = interaction.guild.get_role(staff_role_id)
+        if not role or role not in user.roles:
+            return await interaction.response.send_message(
+                "❌ You don’t have permission to use this command.", ephemeral=True
+            )
+
+    await interaction.response.defer()
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                return await interaction.followup.send(
+                    f"⚠️ API error {r.status}", ephemeral=True
+                )
+            logs = await r.json()
+
+    embed = discord.Embed(title=f"ER:LC Logs ({len(logs)})", colour=0x1E77BE)
+
+    if interaction.guild:
+        icon = interaction.guild.icon.url if interaction.guild.icon else None
+        embed.set_author(name=interaction.guild.name, icon_url=icon)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    if not logs:
+        embed.description = "There are no logs in-game."
+        return await interaction.followup.send(embed=embed)
+
+    lines = []
+    for entry in logs[:10]:
+        name, rid = parse_player(entry.get("Player"))
+        cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+        ts = entry.get("Timestamp")
+        if isinstance(ts, (int, float)):
+            t = f"<t:{int(ts)}:F>"
+            if rid:
+                lines.append(f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
+            else:
+                lines.append(f"{name} used `{cmd}` at {t}")
+
+    if len(logs) > 10:
+        lines.append(f"...and {len(logs) - 10} more logs not shown.")
+
+    embed.description = "\n".join(lines)
+    await interaction.followup.send(embed=embed)
+
+#--
+
+async def fetch_erlc_logs() -> list:
+    """Fetch ER:LC logs from the external API."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                raise RuntimeError(f"API error {r.status}")
+            return await r.json()
+
+
+def build_erlc_embed(guild: discord.Guild, logs: list) -> discord.Embed:
+    """Create an embed displaying ER:LC logs."""
+    embed = discord.Embed(
+        title=f"ER:LC Logs ({len(logs)})",
+        colour=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+
+    # Author & footer
+    if guild:
+        if guild.icon:
+            embed.set_author(name=guild.name, icon_url=guild.icon.url)
+        else:
+            embed.set_author(name=guild.name)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # No logs found
+    if not logs:
+        embed.description = "There are no logs in-game."
+        return embed
+
+    # Format log entries
+    lines = [format_log_entry(entry) for entry in logs[:10]]
+    if len(logs) > 10:
+        lines.append(f"...and {len(logs) - 10} more logs not shown.")
+
+    embed.description = "\n".join(lines)
+    return embed
+
+
+def format_log_entry(entry: dict) -> str:
+    """Format a single log entry for display."""
+    name, rid = parse_player(entry.get("Player"))
+    cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+    ts = entry.get("Timestamp")
+    t = f"<t:{int(ts)}:F>" if isinstance(ts, (int, float)) else "Unknown time"
+
+    if rid:
+        return f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}"
+    return f"{name} used `{cmd}` at {t}"
+
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
 @bot.command(name="erlc")
 async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: str = None):
-    """Prefix command: !erlc <subcommand> [args]"""
     if not subcommand:
         return await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
 
@@ -1585,19 +1924,66 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
         "command": handle_erlc_command,
         "teamkick": handle_erlc_teamkick,
         "bans": handle_erlc_bans,
+        "logs": handle_erlc_logs,
     }
 
     handler = handlers.get(subcommand)
     if not handler:
         return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
 
-    # Only pass extra args to handlers that need them
+    # Pass extra args only if needed
     if subcommand == "teamkick":
         await handler(ctx, roblox_user=roblox_user, reason=reason)
+    elif subcommand == "logs":
+        await handler(ctx, is_interaction=False)
     else:
         await handler(ctx)
 
+# --- Handler: erlc logs ---
+async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
+    """Handles command to display ER:LC logs in an embed."""
+    user = ctx_or_interaction.user if is_interaction else ctx_or_interaction.author
+    guild = ctx_or_interaction.guild
 
+    # Permission check
+    if not await has_permission(user, guild):
+        msg = "❌ You don’t have permission to use this command."
+        return await send_response(ctx_or_interaction, msg, is_interaction, ephemeral=True)
+
+    if is_interaction:
+        await ctx_or_interaction.response.defer()
+
+    # Fetch logs
+    try:
+        logs = await fetch_erlc_logs()
+    except RuntimeError as e:
+        return await send_response(ctx_or_interaction, f"⚠️ {e}", is_interaction, ephemeral=True)
+
+    # Build and send embed
+    embed = build_erlc_embed(guild, logs)
+    await send_response(ctx_or_interaction, embed=embed, is_interaction=is_interaction)
+
+
+async def has_permission(user: discord.Member, guild: discord.Guild) -> bool:
+    """Check if the user has permission to run the command."""
+    if user.id == OWNER_ID:
+        return True
+    role = guild.get_role(staff_role_id)
+    return role and role in user.roles
+
+
+async def send_response(ctx_or_interaction, content=None, embed=None, is_interaction=False, ephemeral=False):
+    """Send a response depending on the context type."""
+    if is_interaction:
+        if content and not embed:
+            await ctx_or_interaction.followup.send(content, ephemeral=ephemeral)
+        else:
+            await ctx_or_interaction.followup.send(embed=embed, ephemeral=ephemeral)
+    else:
+        if content and not embed:
+            await ctx_or_interaction.send(content)
+        else:
+            await ctx_or_interaction.send(embed=embed)
 
 # --- Handler: .erlc bans ---
 async def handle_erlc_bans(ctx):
@@ -1646,7 +2032,6 @@ async def handle_erlc_bans(ctx):
 
 
 # --- Handler: .erlc teamkick ---
-# --- Handler: .erlc teamkick ---
 async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
         return await ctx.send(f"❌ Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
@@ -1685,6 +2070,8 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
 
     # Send success embed
     await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason), ephemeral=True)
+
+
 
 
 # --- Handler: .erlc info ---
@@ -1808,6 +2195,614 @@ async def report_erlc_error(ctx, exception, context):
     await ctx.send(error_message)
     print(f"[ERROR] {context} failed: {exception}")
 
+
+
+
+
+#--
+
+SUGGESTION_CHANNEL_ID = 1343622169086918758 
+STAFF_SUGGESTION_CHANNEL_ID = 1373704702977376297 
+SUGGESTION_LOG_CHANNEL_ID = 1381267054354632745  
+STAFF_SUGGEST_LOG_CHANNEL_ID = 1381267054354632745  
+
+# ============================================================
+# LOGGING FUNCTION
+# ============================================================
+async def log_suggestion(action: str, suggester: discord.User, suggestion: str, channel: discord.TextChannel, guild: discord.Guild):
+    """
+    Logs a suggestion action (Created, Upvote, Downvote, Approved, Denied) to a channel.
+    """
+    embed = discord.Embed(
+        title=f"Suggestion Log: {action}",
+        description=suggestion,
+        color=0x1E77BE,
+    )
+
+    # Set guild name and icon if available
+    if guild.icon:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    else:
+        embed.set_author(name=guild.name)
+
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # Discord formatted user + timestamp
+    unix_ts = int(time.time())
+    embed.add_field(
+        name="User",
+        value=f"[{suggester}](https://discord.com/users/{suggester.id}) ({suggester.id})",
+        inline=True
+    )
+    embed.add_field(
+        name="Time",
+        value=f"<t:{unix_ts}:F>",
+        inline=True
+    )
+
+    await channel.send(embed=embed)
+
+
+# ============================================================
+# VIEW CLASS FOR SUGGESTIONS
+# ============================================================
+class SuggestionView(discord.ui.View):
+    def __init__(self, author: discord.User, approver_role_id=None, staff_mode=False):
+        super().__init__(timeout=None)
+        self.votes = {"up": set(), "down": set()}
+        self.author = author
+        self.staff_mode = staff_mode
+        self.approver_role_id = approver_role_id
+
+    async def update_embed(self, interaction: discord.Interaction):
+        embed = interaction.message.embeds[0]
+        embed.set_field_at(0, name="👍 Upvotes", value=str(len(self.votes["up"])), inline=True)
+        embed.set_field_at(1, name="👎 Downvotes", value=str(len(self.votes["down"])), inline=True)
+        await interaction.message.edit(embed=embed, view=self)
+
+        # Log upvote/downvote
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            last_user = interaction.user
+            if last_user.id in self.votes["up"]:
+                action = "Upvote"
+            elif last_user.id in self.votes["down"]:
+                action = "Downvote"
+            else:
+                action = "Vote Removed"
+            await log_suggestion(action, last_user, embed.description, log_channel, interaction.guild)
+
+    @discord.ui.button(label="Upvote", style=discord.ButtonStyle.green, emoji="👍", row=0)
+    async def upvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid in self.votes["up"]:
+            self.votes["up"].remove(uid)
+        else:
+            self.votes["up"].add(uid)
+            self.votes["down"].discard(uid)
+        await self.update_embed(interaction)
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Downvote", style=discord.ButtonStyle.red, emoji="👎", row=0)
+    async def downvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid in self.votes["down"]:
+            self.votes["down"].remove(uid)
+        else:
+            self.votes["down"].add(uid)
+            self.votes["up"].discard(uid)
+        await self.update_embed(interaction)
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.blurple, emoji=f"{tick_emoji}", row=1)
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        approver_role = discord.utils.get(interaction.guild.roles, id=self.approver_role_id)
+        if approver_role not in interaction.user.roles:
+            embed = discord.Embed(
+                description=f"{staff_emoji} You don't have permission to approve this suggestion.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.green()
+        embed.title = f"{tick_emoji} {embed.title} (Approved)"
+        await interaction.message.edit(embed=embed, view=None)
+
+        # DM author
+        try:
+            dm_embed = discord.Embed(
+                title=f"{tick_emoji} Your suggestion was approved!",
+                description=embed.description,
+                color=discord.Color.green()
+            )
+            await self.author.send(embed=dm_embed)
+        except discord.Forbidden:
+            pass
+
+        # Log approval
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            await log_suggestion("Approved", interaction.user, embed.description, log_channel, interaction.guild)
+
+        confirm = discord.Embed(description=f"{tick_emoji} Suggestion approved.", color=discord.Color.green())
+        await interaction.response.send_message(embed=confirm, ephemeral=True)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.gray, emoji=f"{failed_emoji}", row=1)
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        approver_role = discord.utils.get(interaction.guild.roles, id=self.approver_role_id)
+        if approver_role not in interaction.user.roles:
+            embed = discord.Embed(
+                description=f"{staff_emoji} You don't have permission to deny this suggestion.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.red()
+        embed.title = f"{failed_emoji} {embed.title} (Denied)"
+        await interaction.message.edit(embed=embed, view=None)
+
+        # DM author
+        try:
+            dm_embed = discord.Embed(
+                title=f"{failed_emoji} Your suggestion was denied.",
+                description=embed.description,
+                color=discord.Color.red()
+            )
+            await self.author.send(embed=dm_embed)
+        except discord.Forbidden:
+            pass
+
+        # Log denial
+        log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if self.staff_mode else SUGGESTION_LOG_CHANNEL_ID
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            await log_suggestion("Denied", interaction.user, embed.description, log_channel, interaction.guild)
+
+        confirm = discord.Embed(description=f"{error_emoji} Suggestion denied.", color=discord.Color.red())
+        await interaction.response.send_message(embed=confirm, ephemeral=True)
+
+# ============================================================
+# HELPER FUNCTION
+# ============================================================
+async def post_suggestion(user: discord.User, suggestion: str, guild: discord.Guild, staff_mode=False):
+    """Post a suggestion embed to the correct channel."""
+    channel_id = STAFF_SUGGESTION_CHANNEL_ID if staff_mode else SUGGESTION_CHANNEL_ID
+    log_channel_id = STAFF_SUGGEST_LOG_CHANNEL_ID if staff_mode else SUGGESTION_LOG_CHANNEL_ID
+    channel = bot.get_channel(channel_id)
+    log_channel = bot.get_channel(log_channel_id)
+    if not channel:
+        return None, log_channel
+
+    title = "💡 New Staff Suggestion" if staff_mode else "💡 New Suggestion"
+    color = 0x1E77BE if staff_mode else 0x1E77BE
+
+    embed = discord.Embed(title=title, description=suggestion, color=color)
+    if guild.icon:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    else:
+        embed.set_author(name=guild.name)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    embed.add_field(name="👍 Upvotes", value="0", inline=True)
+    embed.add_field(name="👎 Downvotes", value="0", inline=True)
+
+    approver_role_id = management_role_id if staff_mode else staff_role_id
+    view = SuggestionView(author=user, approver_role_id=approver_role_id, staff_mode=staff_mode)
+    msg = await channel.send(embed=embed, view=view)
+
+    # ✅ Pass guild here!
+    if log_channel:
+        await log_suggestion("Created", user, suggestion, log_channel, guild)
+
+    return msg
+
+
+# ============================================================
+# PREFIX COMMANDS
+# ============================================================
+
+# Public suggestion
+@bot.command(name="suggest")
+async def suggest(ctx, *, suggestion: str = None):
+    if not suggestion:
+        embed = discord.Embed(
+            title=f"{error_emoji} Missing Suggestion",
+            description="Usage: `!suggest <your idea>`",
+            color=discord.Color.orange()
+        )
+        await ctx.send(embed=embed)
+        return
+
+    msg = await post_suggestion(ctx.author, suggestion, ctx.guild, staff_mode=False)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await ctx.send(embed=embed)
+
+# Staff suggestion
+@bot.command(name="staff")
+async def staff(ctx, subcommand: str = None, *, suggestion: str = None):
+    staff_role = discord.utils.get(ctx.guild.roles, id=staff_role_id)
+    if staff_role not in ctx.author.roles:
+        embed = discord.Embed(description=f"{staff_emoji} You must be staff to use this.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    if subcommand is None:
+        embed = discord.Embed(
+            title=f"{staff_emoji} Staff Command Help",
+            description="Subcommands:\n`!staff suggest <idea>` — submit a staff suggestion.",
+            color=0x1E77BE
+        )
+        await ctx.send(embed=embed)
+        return
+
+    if subcommand.lower() == "suggest":
+        if not suggestion:
+            embed = discord.Embed(
+                title=f"{error_emoji} Missing Suggestion",
+                description="Usage: `!staff suggest <idea>`",
+                color=0x1E77BE
+            )
+            await ctx.send(embed=embed)
+            return
+
+        msg = await post_suggestion(ctx.author, suggestion, ctx.guild, staff_mode=True)
+        if msg:
+            embed = discord.Embed(description=f"{tick_emoji} Your staff suggestion has been submitted!", color=discord.Color.green())
+        else:
+            embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"{failed_emoji} Unknown Subcommand",
+                              description=f"`{subcommand}` is not valid. Try `!staff suggest <idea>`.",
+                              color=discord.Color.red())
+        await ctx.send(embed=embed)
+
+# ============================================================
+# SLASH COMMANDS
+# ============================================================
+
+# Public
+@bot.tree.command(name="suggest", description="Submit a public suggestion.")
+async def suggest(interaction: discord.Interaction, suggestion: str):
+    msg = await post_suggestion(interaction.user, suggestion, interaction.guild, staff_mode=False)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@staff_group.command(name="suggest", description="Submit a staff-only suggestion.")
+async def staff_suggest(interaction: discord.Interaction, suggestion: str):
+    staff_role = discord.utils.get(interaction.guild.roles, id=staff_role_id)
+    if staff_role not in interaction.user.roles:
+        embed = discord.Embed(description=f"{staff_emoji} You must be staff to use this.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    msg = await post_suggestion(interaction.user, suggestion, interaction.guild, staff_mode=True)
+    if msg:
+        embed = discord.Embed(description=f"{tick_emoji} Your staff suggestion has been submitted!", color=discord.Color.green())
+    else:
+        embed = discord.Embed(description=f"{failed_emoji} Suggestion channel not found please open a support ticket.", color=discord.Color.red())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+#===
+
+STAFF_FEEDBACK_CHANNEL_ID = 1343621982549311519  # 👈 staff-only feedback channel
+STAFF_FEEDBACK_LOG_CHANNEL_ID = 1381267054354632745  # 👈 staff log channel
+
+# ---------------- UTILITIES ----------------
+async def send_feedback_embed(author: discord.User, target: discord.Member, feedback: str, guild: discord.Guild):
+    # Prevent self-feedback
+    if author.id == target.id:
+        embed = discord.Embed(
+            title=f"{error_emoji} Invalid Action",
+            description="You can’t send feedback to yourself.",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        return embed
+
+    # Check if target has the staff role
+    staff_role = guild.get_role(staff_role_id)
+    if not staff_role or staff_role not in target.roles:
+        embed = discord.Embed(
+            title=f"{error_emoji} Invalid Target",
+            description=f"{target.mention} is not a staff member.",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        return embed
+
+    # Channels
+    staff_channel = bot.get_channel(STAFF_FEEDBACK_CHANNEL_ID)
+    log_channel = bot.get_channel(STAFF_FEEDBACK_LOG_CHANNEL_ID)
+    if not staff_channel:
+        return discord.Embed(
+            title=f"{failed_emoji} Error",
+            description="Feedback channel not found. Please contact support.",
+            color=discord.Color.red()
+        )
+
+    # Unix timestamp for time field
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+
+    # Feedback embed for staff
+    staff_embed = discord.Embed(
+        title="💬 New Feedback Received",
+        description=f"**Feedback:**\n```{feedback}```",
+        color=0x1E77BE,
+    )
+    staff_embed.add_field(name="🧑‍💻 From", value=f"{author.mention} (`{author.id}`)", inline=False)
+    staff_embed.add_field(name="🎯 To", value=f"{target.mention} (`{target.id}`)", inline=False)
+    staff_embed.add_field(name=f"{time_emoji} Time", value=f"<t:{timestamp}:F>", inline=False)
+    if guild and guild.icon:
+        staff_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    staff_embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    # Send to feedback channel and ping staff member
+    await staff_channel.send(content=f"-# {ping_emoji} {target.mention}", embed=staff_embed)
+
+    # Log embed for internal tracking
+    if log_channel:
+        log_embed = discord.Embed(
+            title=f"{clipboard_emoji} Feedback Logged",
+            color=0x1E77BE,
+        )
+        log_embed.add_field(name="🧑‍💻 From", value=f"{author.mention} (`{author.id}`)", inline=False)
+        log_embed.add_field(name="🎯 To", value=f"{target.mention} (`{target.id}`)", inline=False)
+        log_embed.add_field(name="💬 Feedback", value=f"```{feedback}```", inline=False)
+        log_embed.add_field(name=f"{time_emoji} Time", value=f"<t:{timestamp}:F>", inline=False)
+    if guild and guild.icon:
+        log_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+        log_embed.set_footer(text=f"Running {BOT_VERSION}")
+        await log_channel.send(embed=log_embed)
+
+    # Confirmation embed to the sender
+    confirm_embed = discord.Embed(
+        title=F"{tick_emoji} Feedback Sent",
+        description=f"Your feedback to {target.mention} has been sent to the staff channel.",
+        color=discord.Color.green(),
+    )
+    if guild and guild.icon:
+        confirm_embed.set_author(name=guild.name, icon_url=guild.icon.url)
+    confirm_embed.set_footer(text=f"Running {BOT_VERSION}")
+    return confirm_embed
+
+# ---------------- PREFIX COMMAND ----------------
+@bot.command(name="feedback")
+async def feedback_prefix(ctx, to: discord.Member = None, *, feedback: str = None):
+    # Ensure usage is correct
+    if not to or not feedback:
+        embed = discord.Embed(
+            title="💡 Usage",
+            description="# Use the command like this:\n`!feedback @staff <your message>`\n\nExample:\n`!feedback @Admin You're doing great!`",
+            color=discord.Color.orange()
+        )
+        return await ctx.reply(embed=embed)
+
+    # Send feedback
+    embed = await send_feedback_embed(ctx.author, to, feedback, ctx.guild)
+    await ctx.reply(embed=embed)
+
+# ---------------- SLASH COMMAND ----------------
+@bot.tree.command(name="feedback", description="Send feedback to a staff member.")
+async def feedback_slash(interaction: discord.Interaction, to: discord.Member, feedback: str):
+    await interaction.response.defer(ephemeral=True)
+    embed = await send_feedback_embed(interaction.user, to, feedback, interaction.guild)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+#--
+
+# AFK storage: user_id -> {"reason": str, "set_time": datetime, "pings": [(channel_id, pinger_id, timestamp)]}
+afk_users = {}
+
+# ---------------- SET AFK ----------------
+async def set_afk(user: discord.User, reason: str):
+    afk_users[user.id] = {"reason": reason, "set_time": datetime.now(timezone.utc), "pings": []}
+    
+    embed = discord.Embed(
+        description=f"{tick_emoji} I have set you as AFK for: **{reason}**" if reason else "I have set you as AFK.",
+        color=discord.Color.orange()
+    )
+    return embed
+
+# ---------------- COMMANDS ----------------
+@bot.command(name="afk")
+async def afk_prefix(ctx, *, reason: str = None):
+    embed = await set_afk(ctx.author, reason)
+    await ctx.send(embed=embed)
+
+@bot.tree.command(name="afk", description="Set yourself as AFK")
+async def afk_slash(interaction: discord.Interaction, reason: str = None):
+    await interaction.response.defer(ephemeral=True)
+    embed = await set_afk(interaction.user, reason)
+    await interaction.followup.send(embed=embed, ephemeral=False)
+
+# ---------------- AFK HANDLING ----------------
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Manual un-AFK
+    if message.author.id in afk_users:
+        afk_info = afk_users.pop(message.author.id)
+        ping_lines = []
+        for channel_id, pinger_id, ts in afk_info["pings"]:
+            channel_link = f"<#{channel_id}>"
+            pinger = bot.get_user(pinger_id)
+            if pinger:
+                ping_lines.append(f"-# {pinger.name} pinged you in {channel_link} at <t:{int(ts.timestamp())}:F>")
+        if ping_lines:
+            reply_text = f"{tick_emoji} Welcome back {message.author.mention}! You were pinged:\n" + "\n".join(ping_lines)
+        else:
+            reply_text = f"{tick_emoji} Welcome back {message.author.mention}!"
+        await message.channel.send(reply_text)
+
+    # Reply to AFK pings
+    for user in message.mentions:
+        if user.id in afk_users and user.id != message.author.id:
+            afk_info = afk_users[user.id]
+            afk_info["pings"].append((message.channel.id, message.author.id, datetime.now(timezone.utc)))
+            reply_text = f"💤 {user.display_name} is currently AFK"
+            if afk_info["reason"]:
+                reply_text += f": {afk_info['reason']}"
+            await message.channel.send(reply_text)
+
+    await bot.process_commands(message)
+
+#--
+
+SERVER_ID = 1343179590247645205
+WELCOME_CHANNEL_ID = 1343179590247645208
+WELCOME_EMOJI = "<:SRPC:1345744266017636362>"
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    # Only send welcome messages if enabled
+    if not welcome_status:
+        return
+
+    # Make sure it's the correct server
+    if member.guild.id != SERVER_ID:
+        return
+
+    channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
+    if not channel:
+        return
+
+    # Construct welcome message
+    message = (
+        f"Hello, {member.mention}! Welcome to {WELCOME_EMOJI} {member.guild.name}.\n"
+        f"-# You're member {member.guild.member_count}."
+    )
+
+    await channel.send(message)
+
+#---
+
+
+WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all."
+
+
+
+# --- Helper Functions ---
+async def fetch_joinlogs():
+    url = "https://api.policeroleplay.community/v1/server/joinlogs"
+    headers = {"server-key": API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
+                return []
+            data = await resp.json()
+            return data
+
+# --- Task Loop ---
+@tasks.loop(seconds=60)
+async def erlc_welcome_task():
+    global seen_players
+  #  print(f"[DEBUG {datetime.now(timezone.utc)}] Running ER:LC join/leave check.")
+
+    try:
+        joinlogs = await fetch_joinlogs()  # Make sure this returns latest join logs
+    except Exception as e:
+    #    print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch joinlogs: {e}")
+        return
+
+    current_players = set()
+    for entry in joinlogs:
+        player = entry.get("Player")  # "PlayerName:Id"
+        join = entry.get("Join")
+        if not player:
+            continue
+
+        current_players.add(player)
+
+        if join and player not in seen_players:
+            # Player joined
+            seen_players.add(player)
+            rid = player.split(":")[1] if ":" in player else player
+         #   print(f"[DEBUG {datetime.now(timezone.utc)}] Player joined: {rid}")
+
+            if erlc_welcome_status:
+                # Send ER:LC PM command
+                username = player.split(":")[0]
+                await send_to_game(f":pm {username} {WELCOME_MESSAGE}")  # Your POST command wrapper
+
+        elif not join and player in seen_players:
+            # Player left
+            seen_players.remove(player)
+            rid = player.split(":")[1] if ":" in player else player
+        #    print(f"[DEBUG {datetime.now(timezone.utc)}] Player left: {rid}")
+
+#--
+
+TOTAL_CHANNEL_ID = 1424779511588847616  # Voice channel for total members
+HUMAN_CHANNEL_ID = 1424779529863303369  # Voice channel for human members
+BOT_CHANNEL_ID = 1424779551342592131  # Voice channel for bots
+
+# Prefixes (emojis or text)
+total_vc_prefix = "👥 Total Members:"
+human_vc_prefix = "🙎 Humans:"
+bot_vc_prefix = "🤖 Bots:"
+
+# === VC COUNTER TASK ===
+@tasks.loop(seconds=600)  # Update every 10 minutes
+async def update_member_count_vcs():
+    """Updates the 3 VC names with member counts every few seconds."""
+    try:
+        guild = bot.get_guild(YOUR_GUILD_ID)
+        if not guild:
+            # print("[DEBUG] Guild not found.")
+            return
+
+        total_members = len(guild.members)
+        bot_members = sum(1 for m in guild.members if m.bot)
+        human_members = total_members - bot_members
+
+        # print(f"[DEBUG] Updating VC counts → total={total_members}, humans={human_members}, bots={bot_members}")
+
+        # Update only if the name changed
+        await update_vc_name(guild, TOTAL_CHANNEL_ID, f"{total_vc_prefix} {total_members}")
+        await update_vc_name(guild, HUMAN_CHANNEL_ID, f"{human_vc_prefix} {human_members}")
+        await update_vc_name(guild, BOT_CHANNEL_ID, f"{bot_vc_prefix} {bot_members}")
+
+    except discord.HTTPException as e:
+        # print(f"[DEBUG] Failed to update VC names: {e}")
+        pass
+
+    except Exception as e:
+        # print(f"[DEBUG] Unexpected error in update_member_count_vcs: {e}")
+        pass
+
+
+async def update_vc_name(guild, channel_id, new_name):
+    """Updates VC name only if it’s different."""
+    channel = guild.get_channel(channel_id)
+    if not channel or not isinstance(channel, discord.VoiceChannel):
+        return
+
+    if channel.name != new_name:
+  #      print(f"[DEBUG] Renaming {channel.name} → {new_name}")
+        await channel.edit(name=new_name)
+
+
+@update_member_count_vcs.before_loop
+async def before_update_member_count_vcs():
+    await bot.wait_until_ready()
+  #  print("[DEBUG] VC counter task started.")
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -1817,7 +2812,11 @@ command_categories = {
         ("Sync", "Sync slash commands owner only + prefix only"),
         ("servers", "owner only see all servers that the bots in"),
         ("help", "show info about a command"),
-        ("commands", "show all commands")
+        ("commands", "show all commands"),
+        ("feedback", "Send feedback to a staff member"),
+        ("suggest", "Submit a public suggestion"),
+        ("staff suggest", "Submit a staff-only suggestion"),
+        ("afk", "Set yourself as AFK")
     ],
     "⚙️ Moderation": [
         ("N/A", "N/A")
@@ -1830,7 +2829,8 @@ command_categories = {
         ("erlc info", "Give erlc info from the server"),
         ("erlc code", "Show the erlc code"),
         ("erlc bans", "Vuew all baned players from in-game."),
-        ("erlc teamkick", "kick a player off team.")
+        ("erlc teamkick", "kick a player off team."),
+        ("erlc logs", "Show in-game command logs")
     ],
     "🔒 Channel Management": [
         ("N/A", "N/A")
@@ -1940,51 +2940,71 @@ command_details = {
     },
     "erlc command": {
         "description": "Send a command to the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
+        "useage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
     },
     "erlc kills": {
         "description": "Get all killlogs from the erlc server.",
-        "usage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
+        "useage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
     },
     "erlc players": {
         "description": "Show all players in game",
-        "usage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
+        "useage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
     },
         "discord check": {
         "description": "Show whos in the Discord server and whos not.",
-        "usage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
+        "useage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
     },
         "erlc info": {
         "description": "Show erlc info from the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
+        "useage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
     },
         "erlc code": {
         "description": "Show the erlc server code.",
-        "usage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
+        "useage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
     },
         "servers": {
         "description": "Show all servers that the bots in",
-        "usage": f"`{COMMAND_PREFIX}servers` or `/servers`"
+        "useage": f"`{COMMAND_PREFIX}servers` or `/servers`"
     },
         "sync": {
         "description": "Sync all commands.",
-        "usage": f"`{COMMAND_PREFIX}sync`"
+        "useage": f"`{COMMAND_PREFIX}sync`"
     },
         "joincode": {
         "description": "Sync the VC channel that has the join code on it.",
-        "usage": f"`{COMMAND_PREFIX}joincode`"
+        "useage": f"`{COMMAND_PREFIX}joincode`"
     },
         "servername": {
         "description": "Sync the VC channel that has the server name on it.",
-        "usage": f"`{COMMAND_PREFIX}servername`"
+        "useage": f"`{COMMAND_PREFIX}servername`"
     },
         "erlc bans": {
         "description": "View all baned players in-game.",
-        "usage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
     },
         "erlc teamkick": {
         "description": "Kick a player from any team that needs you not to be wanted.",
-        "usage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+    },
+        "erlc logs": {
+        "description": "Show in-game command logs.",
+        "useage": f"`{COMMAND_PREFIX}erlc logs` or `/erlc logs`"
+    },
+        "feedback": {
+        "description": "Send feedback to a staff member.",
+        "useage": f"`{COMMAND_PREFIX}feedback [@staff] [message]` or `/feedback [@staff] [message]`"
+    },
+        "suggest": {
+        "description": "Submit a public suggestion.",
+        "useage": f"`{COMMAND_PREFIX}suggest [your idea]` or `/suggest [your idea]`"
+    },
+        "staff suggest": {
+        "description": "Submit a staff-only suggestion.",
+        "useage": f"`{COMMAND_PREFIX}staff suggest [your idea]` or `/staff suggest [your idea]`"
+    },
+        "afk": {
+        "description": "Set yourself as AFK.",
+        "useage": f"`{COMMAND_PREFIX}afk [reason]` or `/afk [reason]`"
     }
 }
 
@@ -2024,7 +3044,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN")
+        token = os.getenv("DISCORD_TOKEN_BATA")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
