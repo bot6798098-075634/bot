@@ -45,7 +45,6 @@ last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
 
 welcome_status = True  # True = on, False = off
 erlc_welcome_status = True  # False = off, True = on
-join_leave_status = True  # True=on, False=off
 
 # ========================= Other =========================
 
@@ -541,11 +540,11 @@ async def restart(ctx):
 # ---------------------- ERLC setup ----------------------
 
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-KILL_LOG_CHANNEL_ID = 1381267054354632745
-MODCALL_LOG_CHANNEL_ID = 1381267054354632745
-TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-COMMAND_LOG_CHANNEL_ID = 1381267054354632745
+JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+KILL_LOG_CHANNEL_ID = 1382852078048907274
+MODCALL_LOG_CHANNEL_ID = 1382852078048907274
+TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+COMMAND_LOG_CHANNEL_ID = 1382852078048907274
  
 API_KEY = os.getenv("API_KEY")
 API_BASE = os.getenv("API_BASE")
@@ -564,10 +563,15 @@ HEADERS_POST = {
 # --------------------------------------------
 # Helper Function: Send Embed
 # --------------------------------------------
-async def send_log_embed(channel, title, events, color=0x1E77BE):
+# --------------------------------------------
+# Helper Function: Send Embed
+# --------------------------------------------
+async def send_joinleave_log_embed(channel, title, events, color=0x1E77BE):
+    """Sends a formatted embed with the provided events list to Discord."""
     if not events:
-      #  print(f"[DEBUG] No events to send for '{title}'")
+        print(f"[DEBUG] No events to send for '{title}'")
         return
+
     embed = discord.Embed(
         title=title,
         description="\n".join(events),
@@ -575,7 +579,9 @@ async def send_log_embed(channel, title, events, color=0x1E77BE):
     )
     embed.set_footer(text=f"Running {BOT_VERSION}")
     await channel.send(embed=embed)
-   # print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
+
+    print(f"[DEBUG] Sent '{title}' embed with {len(events)} events")
+
 
 
 # --------------------------------------------
@@ -616,7 +622,7 @@ def process_join_leave(entry, seen_players):
         if player_str not in seen_players:
             join_event = f"{user_link} joined at <t:{ts}:F>"
             seen_players.add(player_str)
-          #  print(f"[DEBUG] Player joined: {player_str}")
+           # print(f"[DEBUG] Player joined: {player_str}")
     else:
         if player_str in seen_players:
             leave_event = f"{user_link} left at <t:{ts}:F>"
@@ -629,7 +635,7 @@ def process_join_leave(entry, seen_players):
 # --------------------------------------------
 # Background Task: Check ER:LC Join/Leave Logs
 # --------------------------------------------
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=120)
 async def join_leave_log_task():
     global session, last_joinleave_ts, seen_players
 
@@ -637,18 +643,18 @@ async def join_leave_log_task():
         session = aiohttp.ClientSession()
        # print("[DEBUG] aiohttp session started in join_leave_log_task")
 
-  #  print("[DEBUG] join_leave_log_task running...")
+ #   print("[DEBUG] join_leave_log_task running...")
 
     # Fetch join logs
     try:
         async with session.get(f"{API_BASE}/joinlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-              #  print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
+             #   print(f"[DEBUG] Failed to fetch join logs: {resp.status}")
                 return
             data = await resp.json()
-          #  print(f"[DEBUG] Fetched {len(data)} join log entries")
+         #   print(f"[DEBUG] Fetched {len(data)} join log entries")
     except Exception as e:
-      #  print(f"[DEBUG] Exception fetching join logs: {e}")
+    #    print(f"[DEBUG] Exception fetching join logs: {e}")
         return
 
     if not data:
@@ -661,7 +667,7 @@ async def join_leave_log_task():
         try:
             channel = await bot.fetch_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
         except Exception as e:
-       #     print(f"[DEBUG] Failed to fetch join/leave log channel: {e}")
+          #  print(f"[DEBUG] Failed to fetch join/leave log channel: {e}")
             return
 
     join_events, leave_events = [], []
@@ -679,14 +685,17 @@ async def join_leave_log_task():
 
     # Send embeds
     if join_events:
-        await send_log_embed(channel, "Join Log", join_events, 0x00f529)
+        await send_joinleave_log_embed(channel, "Join Log", join_events, 0x00f529)
     if leave_events:
-        await send_log_embed(channel, "Leave Log", leave_events, 0xf50000)
+        await send_joinleave_log_embed(channel, "Leave Log", leave_events, 0xf50000)
 
 # -
 
-# Helper function to process raw kill log entries
+# --------------------------------------------
+# Helper Function: Format Kill Entry
+# --------------------------------------------
 def format_kill_entry(entry: dict) -> str:
+    """Formats a raw kill log entry into a readable Discord message."""
     ts = entry.get("Timestamp", 0)
     killer_raw = entry.get("Killer", "Unknown:0")
     victim_raw = entry.get("Killed", "Unknown:0")
@@ -702,85 +711,130 @@ def format_kill_entry(entry: dict) -> str:
     else:
         victim_name, victim_id = victim_raw, "0"
 
-    # Build Roblox profile links if ID is valid
+    # Build Roblox profile links if IDs are valid
     killer_link = f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)" if killer_id != "0" else killer_name
     victim_link = f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)" if victim_id != "0" else victim_name
 
     return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
 
-# ---------------------- kill logs ----------------------
 
-@tasks.loop(seconds=60)
+# --------------------------------------------
+# Background Task: Check ER:LC Kill Logs
+# --------------------------------------------
+@tasks.loop(seconds=120)
 async def kill_log_task():
+    """Polls the ER:LC kill logs API and sends updates to Discord."""
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started in kill_log_task")
+
+ #   print("[DEBUG] kill_log_task running...")
+
+    # Fetch kill logs from API
     try:
         async with session.get(f"{API_BASE}/killlogs", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch kill logs: {resp.status}")
+               # print(f"[DEBUG] Failed to fetch kill logs: {resp.status}")
                 return
             data = await resp.json()
+        #    print(f"[DEBUG] Fetched {len(data)} kill log entries")
     except Exception as e:
-        print(f"Error fetching kill logs: {e}")
+    #    print(f"[DEBUG] Exception fetching kill logs: {e}")
         return
 
     if not data:
+    #    print("[DEBUG] No kill logs returned")
         return
 
-    channel = bot.get_channel(KILL_LOG_CHANNEL_ID) or await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
+    # Get channel
+    channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(KILL_LOG_CHANNEL_ID)
+        except Exception as e:
+           # print(f"[DEBUG] Failed to fetch kill log channel: {e}")
+            return
+
+    # Initialize timestamp tracker on first run
     if not hasattr(kill_log_task, "last_ts"):
-        kill_log_task.last_ts = 0
+        # ⛔ Skip sending old logs from before bot start
+        kill_log_task.last_ts = max(entry.get("Timestamp", 0) for entry in data)
+     #   print(f"[DEBUG] Initialized kill_log_task.last_ts = {kill_log_task.last_ts} (skipping old logs)")
+        return
 
     kill_events = []
+    latest_ts = kill_log_task.last_ts
+
     for entry in data:
         ts = entry.get("Timestamp", 0)
         if ts <= kill_log_task.last_ts:
-            continue
+            continue  # Skip old logs
         kill_events.append(format_kill_entry(entry))
-        kill_log_task.last_ts = max(kill_log_task.last_ts, ts)
+        latest_ts = max(latest_ts, ts)
 
-    if kill_events:
-        embed = discord.Embed(
-            title="Kill Log",
-            description="\n".join(kill_events),
-            colour=0xffa200
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
+    kill_log_task.last_ts = latest_ts  # Update last processed timestamp
+
+    if not kill_events:
+      #  print("[DEBUG] No new kill events since last check")
+        return
+
+    # Send embed
+    embed = discord.Embed(
+        title="Kill Log",
+        description="\n".join(kill_events),
+        colour=0xffa200
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
+
+   # print(f"[DEBUG] Sent Kill Log embed with {len(kill_events)} new entries")
 
 # ---------------------- mocall logs ----------------------
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=120)
 async def modcall_log_task():
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    # Ensure aiohttp session exists
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started for modcall_log_task")
+
+    #print("[DEBUG] modcall_log_task running...")
+
+    # Fetch modcall logs from ER:LC API
     try:
         async with session.get(f"{API_BASE}/modcalls", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch modcall logs: {resp.status}")
+           #     print(f"[DEBUG] Failed to fetch modcall logs: {resp.status}")
                 return
             data = await resp.json()
+          #  print(f"[DEBUG] Fetched {len(data)} modcall log entries")
     except Exception as e:
-        print(f"Error fetching modcall logs: {e}")
+       # print(f"[DEBUG] Exception fetching modcall logs: {e}")
         return
 
     if not data:
+      #  print("[DEBUG] No modcall logs returned")
         return
 
+    # Get or fetch the channel
     channel = bot.get_channel(MODCALL_LOG_CHANNEL_ID)
     if not channel:
         try:
             channel = await bot.fetch_channel(MODCALL_LOG_CHANNEL_ID)
         except Exception as e:
-            print(f"Failed to fetch modcall log channel: {e}")
+        #    print(f"[DEBUG] Failed to fetch modcall log channel: {e}")
             return
 
+    # Track last processed timestamp
     if not hasattr(modcall_log_task, "last_ts"):
-        modcall_log_task.last_ts = 0
+        # Initialize to the latest log on startup — this prevents old logs from sending
+        modcall_log_task.last_ts = max((int(e.get("Timestamp", 0)) for e in data), default=0)
+     #   print(f"[DEBUG] Initialized modcall_log_task.last_ts = {modcall_log_task.last_ts} (skipping old logs)")
+        return  # Skip sending logs on first run
 
     modcall_events = []
 
@@ -789,7 +843,7 @@ async def modcall_log_task():
         if ts <= modcall_log_task.last_ts:
             continue
 
-        # Caller
+        # Parse Caller
         caller_raw = entry.get("Caller", "Unknown:0")
         try:
             caller_name, caller_id_str = caller_raw.split(":", 1)
@@ -797,7 +851,7 @@ async def modcall_log_task():
         except (ValueError, AttributeError):
             caller_name, caller_id = caller_raw, 0
 
-        # Moderator (responder) — may be missing if not yet taken
+        # Parse Moderator (optional)
         moderator_raw = entry.get("Moderator")
         if moderator_raw:
             try:
@@ -808,6 +862,7 @@ async def modcall_log_task():
         else:
             mod_name, mod_id = "Unassigned", 0
 
+        # Build clickable links
         caller_link = (
             f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)"
             if caller_id else caller_name
@@ -817,11 +872,10 @@ async def modcall_log_task():
             if mod_id else mod_name
         )
 
-        modcall_events.append(
-            f"{moderator_link} responded to {caller_link} at <t:{ts}:F>"
-        )
-
+        # Build formatted event string
+        modcall_events.append(f"{moderator_link} responded to {caller_link} at <t:{ts}:F>")
         modcall_log_task.last_ts = max(modcall_log_task.last_ts, ts)
+      #  print(f"[DEBUG] Processed new modcall log: {moderator_link} -> {caller_link} at {ts}")
 
     # Send all new modcalls in one embed
     if modcall_events:
@@ -832,30 +886,58 @@ async def modcall_log_task():
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await channel.send(embed=embed)
+     #   print(f"[DEBUG] Sent {len(modcall_events)} new modcall events")
 
 # ---------------------- team join/leave logs ----------------------
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=125)
 async def team_join_leave_log_task():
     global session
-    if not session:
-        session = aiohttp.ClientSession()
 
+    # Ensure session exists
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+     #   print("[DEBUG] aiohttp session started for team_join_leave_log_task")
+
+ #   print("[DEBUG] team_join_leave_log_task running...")
+
+    # Fetch players from API
     players = await fetch_players()
     if not players:
+     #   print("[DEBUG] No players fetched, skipping.")
         return
 
+    # Get the Discord channel
     channel = await get_team_log_channel()
     if not channel:
+     #   print("[DEBUG] Failed to get team log channel, skipping.")
         return
 
+    # On first run, initialize state and skip sending
     if not hasattr(team_join_leave_log_task, "last_team_state"):
-        team_join_leave_log_task.last_team_state = {}
+        team_join_leave_log_task.last_team_state = {parse_player_id(p.get("Player", "Unknown:0"))[1]:
+                                                    normalize_team_name(p.get("Team")) for p in players}
+      #  print("[DEBUG] Initialized team state (skipping old team logs on startup)")
+        return
 
+    # Compute changes since last run
     join_events, leave_events = compute_team_changes(players, team_join_leave_log_task.last_team_state)
 
-    await send_log_embed(channel, "Team Join Log", join_events)
-    await send_log_embed(channel, "Team Leave Log", leave_events)
+    # Combine and send logs (with delay to batch quick changes)
+    if join_events or leave_events:
+     #   print(f"[DEBUG] Found {len(join_events)} joins and {len(leave_events)} leaves.")
+      #  print("[DEBUG] Waiting 10 seconds before sending team logs to allow batching...")
+        await asyncio.sleep(10)  # delay to prevent spam when users switch fast
+
+        # Re-check if new events appeared during delay (optional — can skip)
+        # No re-fetch here to keep simple
+
+        # Send batched logs
+        await send_team_joinleave__log_embed(channel, "Team Join Log", join_events)
+        await send_team_joinleave__log_embed(channel, "Team Leave Log", leave_events)
+      #  print("[DEBUG] Sent team join/leave embeds.")
+    else:
+       # print("[DEBUG] No team changes detected.")
 
 
 # --- Helper Functions ---
@@ -864,11 +946,13 @@ async def fetch_players():
     try:
         async with session.get(f"{API_BASE}/players", headers={"server-key": API_KEY}) as resp:
             if resp.status != 200:
-                print(f"Failed to fetch players: {resp.status}")
+               # print(f"[DEBUG] Failed to fetch players: {resp.status}")
                 return []
-            return await resp.json()
+            data = await resp.json()
+          #  print(f"[DEBUG] Fetched {len(data)} players")
+            return data
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-        print(f"Error fetching players: {e}")
+      #  print(f"[DEBUG] Error fetching players: {e}")
         return []
 
 
@@ -879,7 +963,7 @@ async def get_team_log_channel():
     try:
         return await bot.fetch_channel(TEAM_JOIN_LEAVE_LOG_CHANNEL_ID)
     except discord.DiscordException as e:
-        print(f"Failed to fetch team log channel: {e}")
+     #   print(f"[DEBUG] Failed to fetch team log channel: {e}")
         return None
 
 
@@ -941,7 +1025,7 @@ def process_team_change(join_events, leave_events, previous_team, current_team, 
         join_events.append(f"{text} at <t:{ts}:F>")
 
 
-async def send_log_embed(channel, title, events):
+async def send_team_joinleave__log_embed(channel, title, events):
     if not events:
         return
     embed = discord.Embed(
@@ -967,21 +1051,21 @@ def get_erlc_error_message(http_status: int, api_code: int = None, exception: Ex
         422: f"{error_emoji} **422 – No Players**: The private server has no players in it.",
 
         # API codes
-        0: f"{error_emoji} **0 – Unknown Error**: Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
-        1001: f"{error_emoji} **1001 – Communication Error**: An error occurred communicating with Roblox / the in-game private server.",
-        1002: f"{error_emoji} **1002 – System Error**: An internal system error occurred.",
-        2000: f"{error_emoji} **2000 – Missing Server Key**: You did not provide a server-key.",
-        2001: f"{error_emoji} **2001 – Bad Server Key Format**: You provided an incorrectly formatted server-key.",
-        2002: f"{error_emoji} **2002 – Invalid Server Key**: You provided an invalid (or expired) server-key.",
-        2003: f"{error_emoji} **2003 – Invalid Global API Key**: You provided an invalid global API key.",
-        2004: f"{error_emoji} **2004 – Banned Server Key**: Your server-key is currently banned from accessing the API.",
-        3001: f"{error_emoji} **3001 – Missing Command**: You did not provide a valid command in the request body.",
-        3002: f"{error_emoji} **3002 – Server Offline**: The server you are attempting to reach is currently offline (has no players).",
-        4001: f"{error_emoji} **4001 – Rate Limited**: You are being rate limited.",
-        4002: f"{error_emoji} **4002 – Command Restricted**: The command you are attempting to run is restricted.",
-        4003: f"{error_emoji} **4003 – Prohibited Message**: The message you're trying to send is prohibited.",
-        9998: f"{error_emoji} **9998 – Resource Restricted**: The resource you are accessing is restricted.",
-        9999: f"{error_emoji} **9999 – Module Outdated**: The module running on the in-game server is out of date, please kick all and try again."
+        0: "Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
+        1001: "An error occurred communicating with Roblox / the in-game private server.",
+        1002: "An internal system error occurred.",
+        2000: "You did not provide a server-key.",
+        2001: "You provided an incorrectly formatted server-key.",
+        2002: "You provided an invalid (or expired) server-key.",
+        2003: "You provided an invalid global API key.",
+        2004: "Your server-key is currently banned from accessing the API.",
+        3001: "You did not provide a valid command in the request body.",
+        3002: "The server you are attempting to reach is currently offline (has no players).",
+        4001: "You are being rate limited.",
+        4002: "The command you are attempting to run is restricted.",
+        4003: "The message you're trying to send is prohibited.",
+        9998: "The resource you are accessing is restricted.",
+        9999: "The module running on the in-game server is out of date, please kick all and try again."
     }
 
     # If exception exists but status is 0, just show exception
@@ -1422,7 +1506,7 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
     return None
 
 # --- Loop task: players + queue ---
-@tasks.loop(seconds=140)
+@tasks.loop(seconds=120)
 async def update_vc_status():
     #logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
@@ -2918,6 +3002,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
