@@ -194,6 +194,7 @@ async def on_ready():
         update_vc_status.start()           # Updates VC status regularly
         discord_check_task.start()         # Checks for Discord related events
         erlc_welcome_task.start()          # Sends ER:LC welcome messages
+        update_member_count_vcs.start()   # Updates member count in VCs
         print("✅ Background tasks started")
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
@@ -2745,6 +2746,63 @@ async def erlc_welcome_task():
             rid = player.split(":")[1] if ":" in player else player
         #    print(f"[DEBUG {datetime.now(timezone.utc)}] Player left: {rid}")
 
+#--
+
+TOTAL_CHANNEL_ID = 1424779511588847616  # Voice channel for total members
+HUMAN_CHANNEL_ID = 1424779529863303369  # Voice channel for human members
+BOT_CHANNEL_ID   = 1424779551342592131  # Voice channel for bots
+
+# Prefixes (emojis or text)
+total_vc_prefix = "👥 Total Members:"
+human_vc_prefix = "🙎 Humans:"
+bot_vc_prefix   = "🤖 Bots:"
+
+# === VC COUNTER TASK ===
+@tasks.loop(seconds=600)  # Update every 10 minutes
+async def update_member_count_vcs():
+    """Updates the 3 VC names with member counts every few seconds."""
+    try:
+        guild = bot.get_guild(YOUR_GUILD_ID)
+        if not guild:
+            # print("[DEBUG] Guild not found.")
+            return
+
+        total_members = len(guild.members)
+        bot_members = sum(1 for m in guild.members if m.bot)
+        human_members = total_members - bot_members
+
+        # print(f"[DEBUG] Updating VC counts → total={total_members}, humans={human_members}, bots={bot_members}")
+
+        # Update only if the name changed
+        await update_vc_name(guild, TOTAL_CHANNEL_ID, f"{total_vc_prefix} {total_members}")
+        await update_vc_name(guild, HUMAN_CHANNEL_ID, f"{human_vc_prefix} {human_members}")
+        await update_vc_name(guild, BOT_CHANNEL_ID, f"{bot_vc_prefix} {bot_members}")
+
+    except discord.HTTPException as e:
+        # print(f"[DEBUG] Failed to update VC names: {e}")
+        pass
+
+    except Exception as e:
+        # print(f"[DEBUG] Unexpected error in update_member_count_vcs: {e}")
+        pass
+
+
+async def update_vc_name(guild, channel_id, new_name):
+    """Updates VC name only if it’s different."""
+    channel = guild.get_channel(channel_id)
+    if not channel or not isinstance(channel, discord.VoiceChannel):
+        return
+
+    if channel.name != new_name:
+  #      print(f"[DEBUG] Renaming {channel.name} → {new_name}")
+        await channel.edit(name=new_name)
+
+
+@update_member_count_vcs.before_loop
+async def before_update_member_count_vcs():
+    await bot.wait_until_ready()
+  #  print("[DEBUG] VC counter task started.")
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -3002,6 +3060,7 @@ if __name__ == "__main__":
         print("\n🛑 Bot stopped manually (KeyboardInterrupt).")
     except Exception as e:
         print(f"🔥 Unexpected error occurred: {e}")
+
 
 
 
