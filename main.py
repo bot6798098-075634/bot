@@ -1,31 +1,50 @@
 # ========================= Import =========================
 
 import discord
+import random
+import string
+import datetime
+import traceback
+import json
+from typing import Optional
 import asyncio
+import requests
 import sys
+import subprocess
 import os
 import logging
-from datetime import datetime, timezone
-from discord.ext import commands, tasks
-from discord import app_commands
-import aiohttp
-from dotenv import load_dotenv
-import log
+from discord import Embed
 import re
 import time
+from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+from collections import defaultdict, deque
+from discord.ext import commands, tasks
+from discord import app_commands, ui
+from discord.ui import View, Button, Select
+from discord.utils import get
+from discord.raw_models import RawReactionActionEvent
+import aiohttp
+from threading import Thread
+import typing
+import atexit
+import copy
+from dotenv import load_dotenv
+import io
+from typing import Union
 import shutil
 
 # ========================= Helpers =========================
 
-COMMAND_PREFIX = "."
-BOT_VERSION = "v1.0.2"
-seen_players = set()
-last_joinleave_ts = 0
+COMMAND_PREFIX = "." # Prefix for commands
+BOT_VERSION = "v1.0.2" # version
+seen_players = set()  # Tracks players to avoid duplicate logs
+last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
 
 # ========================= On/Off =========================
 
-welcome_status = True
-erlc_welcome_status = True
+welcome_status = True  # True = on, False = off
+erlc_welcome_status = True  # False = off, True = on
 
 # ========================= Other =========================
 
@@ -33,6 +52,7 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 UTC = timezone.utc
 
@@ -46,6 +66,8 @@ intents.guilds = True
 intents.members = True
 intents.messages = True
 intents.reactions = True
+
+kill_tracker = defaultdict(lambda: deque())
 
 class MyBot(commands.Bot):
     async def setup_hook(self):
@@ -64,6 +86,8 @@ bot = MyBot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
 tree = bot.tree
 events = []
 
+OWNER_ID = 1276264248095412387
+
 session: aiohttp.ClientSession | None = None
 
 erlc_group = app_commands.Group(name="erlc", description="ERLC related commands")
@@ -72,64 +96,127 @@ staff_group = app_commands.Group(name="staff", description="Staff-only commands"
 
 # ========================= Bot on_ready =========================
 
+session: aiohttp.ClientSession | None = None  # global session
+
 @bot.event
 async def on_ready():
-    global session, seen_players, erlc_welcome_status, last_joinleave_ts
+    # --------------------------------------------
+    # Declare global variables to be used/modified
+    # --------------------------------------------
+    global session, seen_players, erlc_welcome_status, join_leave_status, last_joinleave_ts
 
+    # ⚡ Debug: Bot is starting up
     print("⚡ Bot starting...")
 
-    if session is None or session.closed:
-        session = aiohttp.ClientSession()
-        print("✅ aiohttp session started")
+    # --------------------------------------------
+    # Initialize global variables if they don't exist
+    # --------------------------------------------
+    if 'seen_players' not in globals():
+        # Set to keep track of players we have already seen in join logs
+        seen_players = set()
+    if 'erlc_welcome_status' not in globals():
+        # Boolean flag to enable/disable ER:LC welcome messages
+        erlc_welcome_status = False
+    if 'join_leave_status' not in globals():
+        # Boolean flag to control join/leave logging
+        join_leave_status = False
+    if 'last_joinleave_ts' not in globals():
+        # Timestamp of the latest join/leave log processed
+        last_joinleave_ts = 0
 
+    # --------------------------------------------
+    # Register slash command groups
+    # --------------------------------------------
     try:
+        # Add command groups to bot's command tree
         bot.tree.add_command(erlc_group)
         bot.tree.add_command(discord_group)
         bot.tree.add_command(staff_group)
+
+        # Sync commands globally
         await bot.tree.sync()
         print("✅ Slash commands synced!")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
-    bot.start_time = datetime.now(timezone.utc)
+    # --------------------------------------------
+    # Set bot startup time
+    # --------------------------------------------
+    bot.start_time = datetime.now(timezone.utc)  # timezone-aware UTC time
     print(f"Bot start time set to {bot.start_time.isoformat()}")
 
+    # --------------------------------------------
+    # Initialize aiohttp session if not already open
+    # --------------------------------------------
+    if session is None or session.closed:
+        # aiohttp session used for API requests
+        session = aiohttp.ClientSession()
+        print("✅ aiohttp session started")
+
+    # --------------------------------------------
+    # Initialize seen players from ER:LC join logs
+    # --------------------------------------------
     try:
+        # Fetch join logs from API
         joinlogs = await fetch_joinlogs()
-        max_ts = 0
+        max_ts = 0  # Track the latest timestamp
+
+        # Loop through all join log entries
         for entry in joinlogs:
-            ts = entry.get("Timestamp", 0)
-            player = entry.get("Player")
+            ts = entry.get("Timestamp", 0)  # Timestamp of this log
+            player = entry.get("Player")    # Player string (username:ID)
+
+            # Only add players who joined to the seen_players set
             if player and entry.get("Join"):
                 seen_players.add(player)
+
+            # Update max timestamp seen
             if ts > max_ts:
                 max_ts = ts
+
+        # Set last_joinleave_ts to latest timestamp to ignore old logs
         last_joinleave_ts = max_ts
         print(f"✅ Initialized seen_players with {len(seen_players)} entries, last_joinleave_ts={last_joinleave_ts}")
+
     except Exception as e:
+        # Handle errors fetching join logs
         print(f"⚠️ Failed to initialize seen_players: {e}")
 
+    # --------------------------------------------
+    # Start all background tasks
+    # --------------------------------------------
     try:
-        join_leave_log_task.start()
-        kill_log_task.start()
-        modcall_log_task.start()
-        team_join_leave_log_task.start()
-        update_vc_status.start()
-        discord_check_task.start()
-        erlc_welcome_task.start()
-        update_member_count_vcs.start()
+        # Tasks for logging joins/leaves, kills, mod calls, etc.
+        join_leave_log_task.start()        # Logs new join/leave events
+        kill_log_task.start()              # Logs kill events
+        modcall_log_task.start()           # Logs moderator calls
+        team_join_leave_log_task.start()   # Logs team join/leave events
+        update_vc_status.start()           # Updates VC status regularly
+        discord_check_task.start()         # Checks for Discord related events
+        erlc_welcome_task.start()          # Sends ER:LC welcome messages
+        update_member_count_vcs.start()   # Updates member count in VCs
         print("✅ Background tasks started")
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
 
+    # --------------------------------------------
+    # Start presence updater task
+    # --------------------------------------------
     update_presence.start()
     print("✅ Presence updater started")
+
+
+    # --------------------------------------------
+    # Final debug info: bot is fully connected
+    # --------------------------------------------
     print(f"{bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
     print("-----------------------------------------------------------------------")
 
+
 # ---------------------- Presence Loop ----------------------
-@tasks.loop(seconds=300)
+@tasks.loop(seconds=300)  # Update every 5 minutes
 async def update_presence():
+    """Loop through presence messages periodically."""
     statuses = [
         "over the server",
         ".commands",
@@ -137,7 +224,9 @@ async def update_presence():
         "the logs",
         "SRPC Operations"
     ]
+
     for status_text in statuses:
+        # print(f"[DEBUG] Setting presence: Watching {status_text}")
         await bot.change_presence(
             status=discord.Status.dnd,
             activity=discord.Activity(
@@ -145,7 +234,7 @@ async def update_presence():
                 name=status_text
             ),
         )
-        await asyncio.sleep(20)
+        await asyncio.sleep(20)  # Wait 20 seconds before changing again
 
 # ========================= Emojis =========================
 
@@ -169,6 +258,8 @@ people_emoji = "<:people:1417569841514283133>"
 
 # ========================= IDs =========================
 
+# ---------------------- STAFF ROLES ----------------------
+
 staff_role_id = 1343234687505530902
 mod_role_id = 1346576470360850432
 admin_role_id = 1346577013774880892
@@ -177,6 +268,8 @@ management_role_id = 1346578020747575368
 ia_role_id = 1371537163522543647
 ownership_role_id = 1346578250381656124
 
+# ---------------------- OTHER STAFF ROLES ----------------------
+
 session_manager_role_id = 1374839922976100472
 staff_trainer_role_id = 1377794070440837160
 event_Coordinator_role_id = 1346740470272757760
@@ -184,28 +277,35 @@ staff_help_role_id = 1370096425282830437
 staff_blacklist_role_id = 1350831407500628049
 partnership_role_id = 1346740305746989056
 
+# ---------------------- OTHER ROLES ----------------------
+
 afk_role_id = 1355829296085729454
 session_ping_role_id = 1343487514358583347
+
+# ---------------------- USER IDS ----------------------
 
 owner_id = 1276264248095412387
 dj_id = 1296842183344918570
 
 # ========================= IS A ROLE CALLS =========================
 
-def is_staff():
-    return app_commands.check(lambda i: i.guild and any(r.id == staff_role_id for r in i.user.roles))
-def is_mod():
-    return app_commands.check(lambda i: i.guild and any(r.id == mod_role_id for r in i.user.roles))
-def is_admin():
-    return app_commands.check(lambda i: i.guild and any(r.id == admin_role_id for r in i.user.roles))
-def is_superviser():
-    return app_commands.check(lambda i: i.guild and any(r.id == superviser_role_id for r in i.user.roles))
-def is_management():
-    return app_commands.check(lambda i: i.guild and any(r.id == management_role_id for r in i.user.roles))
-def is_ia():
-    return app_commands.check(lambda i: i.guild and any(r.id == ia_role_id for r in i.user.roles))
-def is_ownership():
-    return app_commands.check(lambda i: i.guild and any(r.id == ownership_role_id for r in i.user.roles))
+def is_staff(): return app_commands.check(lambda i: i.guild and any(r.id == staff_role_id for r in i.user.roles))
+def is_mod(): return app_commands.check(lambda i: i.guild and any(r.id == mod_role_id for r in i.user.roles))
+def is_admin(): return app_commands.check(lambda i: i.guild and any(r.id == admin_role_id for r in i.user.roles))
+def is_superviser(): return app_commands.check(lambda i: i.guild and any(r.id == superviser_role_id for r in i.user.roles))
+def is_management(): return app_commands.check(lambda i: i.guild and any(r.id == management_role_id for r in i.user.roles))
+def is_ia(): return app_commands.check(lambda i: i.guild and any(r.id == ia_role_id for r in i.user.roles))
+def is_ownership(): return app_commands.check(lambda i: i.guild and any(r.id == ownership_role_id for r in i.user.roles))
+
+# ---------------------- OTHER STAFF ROLES ----------------------
+
+def is_session_manager(): return app_commands.check(lambda i: i.guild and any(r.id == session_manager_role_id for r in i.user.roles))
+def is_staff_trainer(): return app_commands.check(lambda i: i.guild and any(r.id == staff_trainer_role_id for r in i.user.roles))
+def is_event_coordinator(): return app_commands.check(lambda i: i.guild and any(r.id == event_Coordinator_role_id for r in i.user.roles))
+def is_staff_help(): return app_commands.check(lambda i: i.guild and any(r.id == staff_help_role_id for r in i.user.roles))
+def is_staff_blacklist(): return app_commands.check(lambda i: i.guild and any(r.id == staff_blacklist_role_id for r in i.user.roles))
+
+# ---------------------- USER ----------------------
 
 def is_owner():
     async def predicate(interaction: discord.Interaction):
@@ -216,17 +316,21 @@ def is_owner():
 def get_uptime(bot) -> str:
     now = discord.utils.utcnow()
     uptime_seconds = int((now - bot.start_time).total_seconds())
+
     days, remainder = divmod(uptime_seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, seconds = divmod(remainder, 60)
+
     def format_time(unit, label):
         return f"{unit} {label}{'s' if unit != 1 else ''}"
+
     uptime_parts = [
         format_time(days, "day"),
         format_time(hours, "hour"),
         format_time(minutes, "minute"),
         format_time(seconds, "second")
     ]
+
     return ", ".join(uptime_parts)
 
 
@@ -368,7 +472,7 @@ async def servers_slash(interaction: discord.Interaction):
 @bot.command(name="sync")
 async def sync(ctx):
     """Owner-only: !sync"""
-    if ctx.author.id != owner_id:
+    if ctx.author.id != OWNER_ID:
         # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
@@ -395,7 +499,7 @@ async def sync(ctx):
 @bot.command(name="restart")
 async def restart(ctx):
     """Owner-only: restart the bot"""
-    if ctx.author.id != owner_id:
+    if ctx.author.id != OWNER_ID:
         # react with failed emoji for non-owner
         try:
             await ctx.message.add_reaction(failed_emoji)
@@ -492,7 +596,16 @@ async def send_joinleave_log_embed(channel, title, events, color=0x1E77BE):
 
 
 
-
+# --------------------------------------------
+# Helper Function: Parse player info
+# --------------------------------------------
+def parse_player(player_str):
+    """Return (username, player_id)"""
+    try:
+        username, id_str = player_str.split(":", 1)
+        return username, int(id_str)
+    except (ValueError, AttributeError):
+        return player_str, 0
 
 
 # --------------------------------------------
@@ -594,7 +707,28 @@ async def join_leave_log_task():
 # --------------------------------------------
 # Helper Function: Format Kill Entry
 # --------------------------------------------
+def format_kill_entry(entry: dict) -> str:
+    """Formats a raw kill log entry into a readable Discord message."""
+    ts = entry.get("Timestamp", 0)
+    killer_raw = entry.get("Killer", "Unknown:0")
+    victim_raw = entry.get("Killed", "Unknown:0")
 
+    # Split "Username:UserId"
+    if ":" in killer_raw:
+        killer_name, killer_id = killer_raw.split(":", 1)
+    else:
+        killer_name, killer_id = killer_raw, "0"
+
+    if ":" in victim_raw:
+        victim_name, victim_id = victim_raw.split(":", 1)
+    else:
+        victim_name, victim_id = victim_raw, "0"
+
+    # Build Roblox profile links if IDs are valid
+    killer_link = f"[{killer_name}](https://www.roblox.com/users/{killer_id}/profile)" if killer_id != "0" else killer_name
+    victim_link = f"[{victim_name}](https://www.roblox.com/users/{victim_id}/profile)" if victim_id != "0" else victim_name
+
+    return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
 
 
 # --------------------------------------------
@@ -794,7 +928,7 @@ async def team_join_leave_log_task():
 
     # On first run, initialize state and skip sending
     if not hasattr(team_join_leave_log_task, "last_team_state"):
-        team_join_leave_log_task.last_team_state = {parse_player(p.get("Player", "Unknown:0"))[1]:
+        team_join_leave_log_task.last_team_state = {parse_player_id(p.get("Player", "Unknown:0"))[1]:
                                                     normalize_team_name(p.get("Team")) for p in players}
       #  print("[DEBUG] Initialized team state (skipping old team logs on startup)")
         return
@@ -853,7 +987,7 @@ def compute_team_changes(players, last_team_state):
     ts = int(time.time())
 
     for player in players:
-        username, player_id = parse_player(player.get("Player", "Unknown:0"))
+        username, player_id = parse_player_id(player.get("Player", "Unknown:0"))
         team_name = normalize_team_name(player.get("Team"))
         callsign = player.get("Callsign")
         previous_team = last_team_state.get(player_id)
@@ -865,6 +999,14 @@ def compute_team_changes(players, last_team_state):
         last_team_state[player_id] = team_name
 
     return join_events, leave_events
+
+
+def parse_player_id(player_raw):
+    try:
+        username, id_str = player_raw.split(":", 1)
+        return username, int(id_str)
+    except (ValueError, AttributeError):
+        return player_raw, 0
 
 
 def normalize_team_name(team_name):
@@ -1427,7 +1569,7 @@ async def update_vc_name_api(
     success_message: str,
 ):
     """Generic helper for updating a VC name based on API field."""
-    if ctx.author.id != owner_id:
+    if ctx.author.id != OWNER_ID:
         try:
             await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException as e:
@@ -1600,7 +1742,7 @@ def build_status_embed(roblox_user: str) -> discord.Embed:
 async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
     user = interaction.user
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
-    is_owner = user.id == owner_id
+    is_owner = user.id == OWNER_ID
 
     if not has_staff_role and not is_owner:
         return await interaction.response.send_message(embed=build_permission_denied_embed(), ephemeral=True)
@@ -1681,7 +1823,7 @@ def parse_player(player):
 @erlc_group.command(name="logs", description="Show ER:LC in-game command logs")
 async def erlc_logs(interaction: discord.Interaction):
     user = interaction.user
-    if user.id != owner_id:
+    if user.id != OWNER_ID:
         role = interaction.guild.get_role(staff_role_id)
         if not role or role not in user.roles:
             return await interaction.response.send_message(
@@ -1837,7 +1979,7 @@ async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
 
 async def has_permission(user: discord.Member, guild: discord.Guild) -> bool:
     """Check if the user has permission to run the command."""
-    if user.id == owner_id:
+    if user.id == OWNER_ID:
         return True
     role = guild.get_role(staff_role_id)
     return role and role in user.roles
@@ -1909,7 +2051,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
-    is_owner = user.id == owner_id
+    is_owner = user.id == OWNER_ID
 
     if not has_staff_role and not is_owner:
         try:
@@ -1940,7 +2082,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     )
 
     # Send success embed
-    await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason))
+    await ctx.send(embed=build_teamkick_success_embed(user, roblox_user, reason), ephemeral=True)
 
 
 
@@ -2044,7 +2186,7 @@ def create_embed(ctx, title, description):
     return embed
 
 
-def format_kill_entry(entry): # ---
+def format_kill_entry(entry):
     ts = entry.get("Timestamp", 0)
     killer_name, killer_id = parse_player(entry.get("Killer", "Unknown:0"))
     victim_name, victim_id = parse_player(entry.get("Killed", "Unknown:0"))
@@ -2053,6 +2195,12 @@ def format_kill_entry(entry): # ---
     return f"{killer_link} killed {victim_link} at <t:{ts}:F>"
 
 
+def parse_player(player_raw):
+    if ":" in player_raw:
+        name, id_str = player_raw.split(":", 1)
+    else:
+        name, id_str = player_raw, "0"
+    return name, id_str
 
 
 async def report_erlc_error(ctx, exception, context):
@@ -2563,7 +2711,7 @@ WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all."
 
 # --- Helper Functions ---
 async def fetch_joinlogs():
-    url = f"{API_BASE}/joinlogs"
+    url = "https://api.policeroleplay.community/v1/server/joinlogs"
     headers = {"server-key": API_KEY}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
@@ -2667,7 +2815,6 @@ async def update_vc_name(guild, channel_id, new_name):
 async def before_update_member_count_vcs():
     await bot.wait_until_ready()
     # print("[DEBUG] VC counter task started.")
-
 
 # ---------------------- commmand info ----------------------
 
@@ -2806,71 +2953,71 @@ command_details = {
     },
     "erlc command": {
         "description": "Send a command to the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
+        "useage": f"`{COMMAND_PREFIX}erlc command` or `/erlc command [command]`"
     },
     "erlc kills": {
         "description": "Get all killlogs from the erlc server.",
-        "usage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
+        "useage": f"`{COMMAND_PREFIX}erlc kills` or `/erlc kills`"
     },
     "erlc players": {
         "description": "Show all players in game",
-        "usage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
+        "useage": f"`{COMMAND_PREFIX}erlc players` or `/erlc players`"
     },
         "discord check": {
         "description": "Show whos in the Discord server and whos not.",
-        "usage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
+        "useage": f"`{COMMAND_PREFIX}discord check` or `/discord check`"
     },
         "erlc info": {
         "description": "Show erlc info from the server.",
-        "usage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
+        "useage": f"`{COMMAND_PREFIX}erlc info` or `/erlc info`"
     },
         "erlc code": {
         "description": "Show the erlc server code.",
-        "usage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
+        "useage": f"`{COMMAND_PREFIX}erlc code` or `/erlc code`"
     },
         "servers": {
         "description": "Show all servers that the bots in",
-        "usage": f"`{COMMAND_PREFIX}servers` or `/servers`"
+        "useage": f"`{COMMAND_PREFIX}servers` or `/servers`"
     },
         "sync": {
         "description": "Sync all commands.",
-        "usage": f"`{COMMAND_PREFIX}sync`"
+        "useage": f"`{COMMAND_PREFIX}sync`"
     },
         "joincode": {
         "description": "Sync the VC channel that has the join code on it.",
-        "usage": f"`{COMMAND_PREFIX}joincode`"
+        "useage": f"`{COMMAND_PREFIX}joincode`"
     },
         "servername": {
         "description": "Sync the VC channel that has the server name on it.",
-        "usage": f"`{COMMAND_PREFIX}servername`"
+        "useage": f"`{COMMAND_PREFIX}servername`"
     },
         "erlc bans": {
         "description": "View all baned players in-game.",
-        "usage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
+        "useage": f"`{COMMAND_PREFIX}erlc bans` or `/erlc bans`"
     },
         "erlc teamkick": {
         "description": "Kick a player from any team that needs you not to be wanted.",
-        "usage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
+        "useage": f"`{COMMAND_PREFIX}erlc teamkick [player] [reason]` or `/erlc teamkick [player] [reason]`"
     },
         "erlc logs": {
         "description": "Show in-game command logs.",
-        "usage": f"`{COMMAND_PREFIX}erlc logs` or `/erlc logs`"
+        "useage": f"`{COMMAND_PREFIX}erlc logs` or `/erlc logs`"
     },
         "feedback": {
         "description": "Send feedback to a staff member.",
-        "usage": f"`{COMMAND_PREFIX}feedback [@staff] [message]` or `/feedback [@staff] [message]`"
+        "useage": f"`{COMMAND_PREFIX}feedback [@staff] [message]` or `/feedback [@staff] [message]`"
     },
         "suggest": {
         "description": "Submit a public suggestion.",
-        "usage": f"`{COMMAND_PREFIX}suggest [your idea]` or `/suggest [your idea]`"
+        "useage": f"`{COMMAND_PREFIX}suggest [your idea]` or `/suggest [your idea]`"
     },
         "staff suggest": {
         "description": "Submit a staff-only suggestion.",
-        "usage": f"`{COMMAND_PREFIX}staff suggest [your idea]` or `/staff suggest [your idea]`"
+        "useage": f"`{COMMAND_PREFIX}staff suggest [your idea]` or `/staff suggest [your idea]`"
     },
         "afk": {
         "description": "Set yourself as AFK.",
-        "usage": f"`{COMMAND_PREFIX}afk [reason]` or `/afk [reason]`"
+        "useage": f"`{COMMAND_PREFIX}afk [reason]` or `/afk [reason]`"
     }
 }
 
@@ -2910,7 +3057,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN_BATA")
+        token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
