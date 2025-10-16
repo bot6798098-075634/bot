@@ -41,7 +41,8 @@ COMMAND_PREFIX = "." # Prefix for commands
 BOT_VERSION = "v1.0.3" # version
 seen_players = set()  # Tracks players to avoid duplicate logs
 last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
-WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all."
+# WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all. (bata)"
+WELCOME_MESSAGE = "bata"
 
 # ========================= On/Off =========================
 
@@ -96,6 +97,7 @@ session: aiohttp.ClientSession | None = None
 erlc_group = app_commands.Group(name="erlc", description="ERLC related commands")
 discord_group = app_commands.Group(name="discord", description="Discord-related commands")
 staff_group = app_commands.Group(name="staff", description="Staff-only commands")
+roblox_group = app_commands.Group(name="roblox", description="Roblox-related commands")
 
 # ========================= Bot on_ready =========================
 
@@ -135,6 +137,7 @@ async def on_ready():
         bot.tree.add_command(erlc_group)
         bot.tree.add_command(discord_group)
         bot.tree.add_command(staff_group)
+        bot.tree.add_command(roblox_group)
 
         # Sync commands globally
         await bot.tree.sync()
@@ -471,29 +474,72 @@ async def servers_slash(interaction: discord.Interaction):
 
 # ---------------------- .sync ----------------------
 
+# --------------------------
+# Embeds for Sync Command
+# --------------------------
+def synced_embed(ctx: commands.Context, synced_count: int):
+    """Embed for successful sync"""
+    embed = discord.Embed(
+        title=f"{tick_emoji_2} Commands Synced",
+        description=f"{tick_emoji_2} Synced **{synced_count}** application command(s).",
+        color=discord.Color(0x1E77BE)
+    )
+    if ctx.guild:
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+
+def failed_embed(ctx: commands.Context, error_msg: str):
+    """Embed for failed sync"""
+    embed = discord.Embed(
+        title=f"{failed_emoji_2} Sync Failed",
+        description=f"{failed_emoji_2} Failed to sync commands:\n```{error_msg}```",
+        color=discord.Color.red()
+    )
+    if ctx.guild:
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+# --------------------------
+# Sync Command
+# --------------------------
 @bot.command(name="sync")
-async def sync(ctx):
-    """Owner-only: !sync"""
+async def sync(ctx: commands.Context):
+    """Owner-only command: .sync"""
     if ctx.author.id != OWNER_ID:
-        # react with failed emoji
         try:
             await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException as e:
             print(f"[WARN] Failed to react with failed_emoji: {e}")
-        return  # exit command here!
+        return await ctx.send(
+            embed=discord.Embed(
+                title="🚫 Access Denied",
+                description="Only the bot owner can run this command.",
+                color=discord.Color.red()
+            )
+        )
 
     try:
         async with ctx.typing():
-            synced = await bot.tree.sync()
-        # react with tick emoji
+            synced = await ctx.bot.tree.sync()
+        count = len(synced)
+
         try:
-            await ctx.message.add_reaction(tick_emoji)
+            await ctx.message.add_reaction(tick_emoji_2)
         except discord.HTTPException as e:
             print(f"[WARN] Failed to react with tick_emoji: {e}")
 
-        await ctx.send(f"✅ Synced {len(synced)} application command(s).")
+        await ctx.send(embed=synced_embed(ctx, count))
+
     except Exception as e:
-        await ctx.send(f"❌ Failed to sync commands: `{e}`")
+        try:
+            await ctx.message.add_reaction(failed_emoji_2)
+        except discord.HTTPException:
+            pass
+
+        await ctx.send(embed=failed_embed(ctx, str(e)))
         print(f"[ERROR] !sync failed: {e}")
 
 # --
@@ -554,11 +600,11 @@ async def restart(ctx):
 # ---------------------- ERLC setup ----------------------
 
 ROBLOX_USER_API = "https://users.roblox.com/v1/users"
-JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-KILL_LOG_CHANNEL_ID = 1381267054354632745
-MODCALL_LOG_CHANNEL_ID = 1381267054354632745
-TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1381267054354632745
-COMMAND_LOG_CHANNEL_ID = 1381267054354632745
+JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+KILL_LOG_CHANNEL_ID = 1382852078048907274
+MODCALL_LOG_CHANNEL_ID = 1382852078048907274
+TEAM_JOIN_LEAVE_LOG_CHANNEL_ID = 1382852078048907274
+COMMAND_LOG_CHANNEL_ID = 1382852078048907274
  
 API_KEY = os.getenv("API_KEY")
 API_BASE = os.getenv("API_BASE")
@@ -3037,6 +3083,30 @@ async def before_update_member_count_vcs():
 
 
 
+failed_emoji_2 = "❌"
+tick_emoji_2 = "✅"
+
+# -------------------------------
+# On command error: invalid command
+# -------------------------------
+@bot.event
+async def on_command_error(ctx, error):
+    """React with failed emoji if the command does not exist."""
+    if isinstance(error, commands.CommandNotFound):
+        try:
+            await ctx.message.add_reaction(failed_emoji_2)
+            await asyncio.sleep(0.25)
+            await ctx.message.add_reaction("1️⃣")
+        except discord.HTTPException:
+            pass  # Ignore if bot can't react (no permission, etc.)
+        return  # Prevent further error messages
+
+    # Optional: handle other errors normally (e.g., missing permissions)
+    raise error
+
+@bot.command(name="send_test_message")
+async def send_test_message(ctx):
+    await ctx.send("<:failed:1387853598733369435> 1️⃣ = Command not found")
 
 
 
@@ -3047,18 +3117,221 @@ async def before_update_member_count_vcs():
 
 
 
+# --- Roblox User Lookup ---
+
+@roblox_group.command(name="user", description="Get information about a Roblox user (username or user ID).")
+@app_commands.describe(user="Enter a Roblox username or user ID.")
+async def roblox_user(interaction: discord.Interaction, user: str):
+    await interaction.response.defer(thinking=True)
+
+    async def lookup_by_id(session: aiohttp.ClientSession, user_id: int):
+        url = f"https://users.roblox.com/v1/users/{user_id}"
+        async with session.get(url) as r:
+            if r.status == 200:
+                return await r.json()
+            return None
+
+    async def lookup_by_username(session: aiohttp.ClientSession, username: str):
+        url = "https://users.roblox.com/v1/usernames/users"
+        payload = {"usernames": [username], "excludeBannedUsers": False}
+        async with session.post(url, json=payload) as r:
+            if r.status == 200:
+                data = await r.json()
+                arr = data.get("data", [])
+                if arr:
+                    return arr[0]
+            return None
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            user_obj = None
+
+            # detect numeric user ID
+            if user.isdigit():
+                user_obj = await lookup_by_id(session, int(user))
+                if not user_obj:
+                    user_obj = await lookup_by_username(session, user)
+            else:
+                found = await lookup_by_username(session, user)
+                if found:
+                    user_obj = await lookup_by_id(session, found["id"])
+
+            if not user_obj:
+                embed = discord.Embed(
+                    title=f"{failed_emoji_2} User Not Found",
+                    description=f"Could not find a Roblox user for `{user}`.",
+                    color=discord.Color.red(),
+                )
+                return await interaction.followup.send(embed=embed, ephemeral=True)
+
+            # extract info
+            user_id = user_obj.get("id")
+            username = user_obj.get("name")
+            display_name = user_obj.get("displayName") or username
+            description = user_obj.get("description") or "None"
+            created = user_obj.get("created")
+            profile_url = f"https://www.roblox.com/users/{user_id}/profile"
+
+            # --- created date fix ---
+            created_dt = None
+            if created:
+                try:
+                    # Normalize Z → +00:00 and handle milliseconds
+                    clean = created.replace("Z", "+00:00")
+                    if "." in clean:
+                        clean = clean.split(".")[0] + "+00:00"
+                    created_dt = datetime.datetime.fromisoformat(clean)
+                except Exception:
+                    created_dt = None
+
+            # fetch avatar
+            avatar_url = None
+            thumb_url = (
+                f"https://thumbnails.roblox.com/v1/users/avatar-headshot"
+                f"?userIds={user_id}&size=420x420&format=Png&isCircular=false"
+            )
+            async with session.get(thumb_url) as tr:
+                if tr.status == 200:
+                    td = await tr.json()
+                    data = td.get("data")
+                    if data and isinstance(data, list) and data[0].get("imageUrl"):
+                        avatar_url = data[0]["imageUrl"]
+
+            # --- build embed ---
+            embed = discord.Embed(
+                title=f"{display_name}",
+                color=discord.Color.blurple(),
+                url=profile_url,
+                description=f"""
+> 🧾 **Name:** [@{username}]({profile_url}) ({display_name})
+> 🆔 **ID:** `{user_id}`
+> 🗒️ **Description:** {description}
+                """,
+            )
+
+            if avatar_url:
+                embed.set_thumbnail(url=avatar_url)
+
+            embed.set_footer(text=f"Running {BOT_VERSION}")
+            await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            embed = discord.Embed(
+                title=f"{failed_emoji_2} Roblox API Error",
+                description=f"An error occurred while fetching data:\n`{e}`",
+                color=discord.Color.red(),
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 
 
 
 
+async def handle_roblox_user(ctx, roblox_user: str):
+    async with ctx.typing():  # ← correct typing context
+        async def lookup_by_id(session: aiohttp.ClientSession, user_id: int):
+            url = f"https://users.roblox.com/v1/users/{user_id}"
+            async with session.get(url) as r:
+                if r.status == 200:
+                    return await r.json()
+                return None
+
+        async def lookup_by_username(session: aiohttp.ClientSession, username: str):
+            url = "https://users.roblox.com/v1/usernames/users"
+            payload = {"usernames": [username], "excludeBannedUsers": False}
+            async with session.post(url, json=payload) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    arr = data.get("data", [])
+                    if arr:
+                        return arr[0]
+                return None
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                user_obj = None
+
+                if roblox_user.isdigit():
+                    user_obj = await lookup_by_id(session, int(roblox_user))
+                    if not user_obj:
+                        user_obj = await lookup_by_username(session, roblox_user)
+                else:
+                    found = await lookup_by_username(session, roblox_user)
+                    if found:
+                        user_obj = await lookup_by_id(session, found["id"])
+
+                if not user_obj:
+                    embed = discord.Embed(
+                        title=f"{failed_emoji_2} User Not Found",
+                        description=f"Could not find a Roblox user for `{roblox_user}`.",
+                        color=discord.Color.red(),
+                    )
+                    return await ctx.send(embed=embed)
+
+                user_id = user_obj.get("id")
+                username = user_obj.get("name")
+                display_name = user_obj.get("displayName") or username
+                description = user_obj.get("description") or "None"
+                profile_url = f"https://www.roblox.com/users/{user_id}/profile"
+
+                # Fetch avatar
+                avatar_url = None
+                thumb_url = (
+                    f"https://thumbnails.roblox.com/v1/users/avatar-headshot"
+                    f"?userIds={user_id}&size=420x420&format=Png&isCircular=false"
+                )
+                async with session.get(thumb_url) as tr:
+                    if tr.status == 200:
+                        td = await tr.json()
+                        data = td.get("data")
+                        if data and isinstance(data, list) and data[0].get("imageUrl"):
+                            avatar_url = data[0]["imageUrl"]
+
+                embed = discord.Embed(
+                    title=f"{display_name}",
+                    color=discord.Color.blurple(),
+                    url=profile_url,
+                    description=f"""
+> 🧾 **Name:** [@{username}]({profile_url}) ({display_name})
+> 🆔 **ID:** `{user_id}`
+> 🗒️ **Description:** {description}
+                    """,
+                )
+
+                if avatar_url:
+                    embed.set_thumbnail(url=avatar_url)
+
+                embed.set_footer(text=f"Running {BOT_VERSION}")
+                await ctx.send(embed=embed)
+
+            except Exception as e:
+                embed = discord.Embed(
+                    title=f"{failed_emoji_2} Roblox API Error",
+                    description=f"An error occurred while fetching data:\n`{e}`",
+                    color=discord.Color.red(),
+                )
+                await ctx.send(embed=embed)
 
 
+@bot.command(name="roblox")
+async def roblox(ctx, subcommand: str = None, roblox_user: str = None):
+    if not subcommand:
+        return await ctx.send("❌ Unknown command. Use `!roblox user <username_or_id>`.")
 
+    subcommand = subcommand.lower()
+    handlers = {
+        "user": handle_roblox_user,
+    }
 
+    handler = handlers.get(subcommand)
+    if not handler:
+        return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Use `!roblox user <username_or_id>`.")
 
-
+    if subcommand == "user":
+        if not roblox_user:
+            return await ctx.send("❌ Please provide a username or user ID for the `user` subcommand.")
+        await handler(ctx, roblox_user=roblox_user)
 
 
 
