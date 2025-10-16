@@ -354,7 +354,7 @@ def create_ping_embed(ctx_or_interaction):
             f"> {time_emoji} Uptime: `{uptime_str}`\n"
             f"> Version: `{BOT_VERSION}`\n"
         ),
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
     
     # Determine whether it's a Context (prefix command) or Interaction (slash command)
@@ -387,7 +387,7 @@ async def uptime_prefix(ctx: commands.Context):
     embed = discord.Embed(
         title=f"{time_emoji} Bot Uptime",
         description=f"The bot has been online for:\n**{uptime_str}**",
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
 
     embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
@@ -403,7 +403,7 @@ async def uptime_slash(interaction: discord.Interaction):
     embed = discord.Embed(
         title=f"{time_emoji} Bot Uptime",
         description=f"The bot has been online for:\n**{uptime_str}**",
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
 
     embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url)
@@ -436,7 +436,7 @@ async def create_guild_embed(guild: discord.Guild):
             f"Members: {guild.member_count}\n"
             f"Invite: {invite_link}"
         ),
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
     if guild.icon:
         embed.set_thumbnail(url=guild.icon.url)
@@ -482,7 +482,7 @@ def synced_embed(ctx: commands.Context, synced_count: int):
     embed = discord.Embed(
         title=f"{tick_emoji_2} Commands Synced",
         description=f"{tick_emoji_2} Synced **{synced_count}** application command(s).",
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
     if ctx.guild:
         embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
@@ -1209,7 +1209,7 @@ async def erlc_info_embed(interaction: discord.Interaction) -> discord.Embed:
     staff = [p for p in players if p.get("Permission") != "Normal"]
 
     embed = discord.Embed(
-        color=discord.Color(0x1E77BE),
+        color=0x1E77BE,
     )
     embed.add_field(
         name=f"{clipboard_emoji} Basic Info",
@@ -1356,7 +1356,7 @@ def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
     embed = discord.Embed(
         title="Discord Check",
         description=f"{tick_emoji} All players are in the Discord!",
-        color=discord.Color(0x1E77BE),
+        color=0x1E77BE,
     )
     embed.set_author(name=guild.name, icon_url=guild.icon.url)
     embed.set_footer(text=f"Running {BOT_VERSION}")
@@ -1395,7 +1395,7 @@ async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed | Non
             embed = discord.Embed(
                 title="Discord Check",
                 description=f"There are **{len(not_in_discord)}** players **NOT** in the Discord!\n> {formatted}",
-                color=discord.Color(0x1E77BE),
+                color=0x1E77BE,
             )
         else:
             embed = all_players_in_discord_embed(guild)
@@ -1789,7 +1789,7 @@ def build_status_embed(roblox_user: str) -> discord.Embed:
     return discord.Embed(
         title="⏳ Processing Team Kick",
         description=f"Processing team kick for `{roblox_user}`...",
-        colour=discord.Color.blurple()
+        colour=0x1E77BE
     )
 
 @erlc_group.command(name="teamkick", description="Kick a Roblox player off a team (up to 1m to be done)")
@@ -3200,7 +3200,7 @@ async def roblox_user(interaction: discord.Interaction, user: str):
             # --- build embed ---
             embed = discord.Embed(
                 title=f"{display_name}",
-                color=discord.Color.blurple(),
+                color=0x1E77BE,
                 url=profile_url,
                 description=f"""
 > 🧾 **Name:** [@{username}]({profile_url}) ({display_name})
@@ -3290,7 +3290,7 @@ async def handle_roblox_user(ctx, roblox_user: str):
 
                 embed = discord.Embed(
                     title=f"{display_name}",
-                    color=discord.Color.blurple(),
+                    color=0x1E77BE,
                     url=profile_url,
                     description=f"""
 > 🧾 **Name:** [@{username}]({profile_url}) ({display_name})
@@ -3842,7 +3842,7 @@ async def help_prefix(ctx):
     embed = discord.Embed(
         title="Bot Commands List",
         description=f"Explore the available commands grouped by category. Use `{COMMAND_PREFIX}help [command name]` or `/help [command name]` for more details.",
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
 
     for category, commands_list in command_categories.items():
@@ -3865,7 +3865,7 @@ async def help_slash(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Bot Commands List",
         description=f"Explore the available commands grouped by category. Use `{COMMAND_PREFIX}help [command name]` or `/help [command name]` for more details.",
-        color=discord.Color(0x1E77BE)
+        color=0x1E77BE
     )
 
     for category, commands_list in command_categories.items():
@@ -4025,7 +4025,7 @@ async def send_command_detail(target, command_name):
         embed = discord.Embed(
             title=f"Help: /{cmd}",
             description=f"**Description:** {data['description']}\n**Usage:** {data['usage']}",
-            color=discord.Color(0x1E77BE)
+            color=0x1E77BE
         )
         if isinstance(target, commands.Context):
             await target.send(embed=embed)
