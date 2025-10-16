@@ -544,6 +544,32 @@ async def sync(ctx: commands.Context):
 
 # --
 
+# make restarting embed
+def restart_embed(ctx: commands.Context):
+    """Embed for restarting the bot"""
+    embed = discord.Embed(
+        title=f"{ping_emoji} Restarting Bot",
+        description="♻️ The bot is restarting...",
+        color=0x1E77BE
+    )
+    if ctx.guild:
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
+# make fail embed
+def fail_embed(ctx: commands.Context, error_msg: str):
+    """Embed for failed restart"""
+    embed = discord.Embed(
+        title=f"{failed_emoji_2} Restart Failed",
+        description=f"{failed_emoji_2} Failed to restart the bot:\n```{error_msg}```",
+        color=discord.Color.red()
+    )
+    if ctx.guild:
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+    return embed
+
 @bot.command(name="restart")
 async def restart(ctx):
     """Owner-only: restart the bot"""
@@ -561,7 +587,7 @@ async def restart(ctx):
     except discord.HTTPException as e:
         log.warning("Failed to react with tick_emoji: %s", e)
 
-    await ctx.send("♻️ Restarting bot...")
+    await ctx.send(embed=restart_embed(ctx))
 
     # --- Validate python executable (avoid untrusted paths) ---
     python_path = sys.executable  # usually an absolute path
@@ -572,7 +598,7 @@ async def restart(ctx):
 
     if not python_path:
         # Fail early with clear message rather than blindly invoking execv
-        await ctx.send("❌ Could not locate a Python executable to restart this process.")
+        await ctx.send(embed=fail_embed(ctx, "Could not locate a valid Python executable to restart the bot."))
         log.error("Restart failed: could not locate python executable (sys.executable=%r)", sys.executable)
         return
 
@@ -592,7 +618,7 @@ async def restart(ctx):
         os.execv(python_path, argv)  # nosec: B606
     except OSError as e:
         # Exec failed — inform operator and log full traceback
-        await ctx.send(f"❌ Failed to restart: `{e}`")
+        await ctx.send(embed=fail_embed(ctx, f"os.execv failed: {e}"))
         log.exception("os.execv failed while attempting to restart: %s", e)
 
 # ========================= ERLC stuff =========================
