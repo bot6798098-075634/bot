@@ -152,7 +152,7 @@ async def on_ready():
     # Set bot startup time
     # --------------------------------------------
     bot.start_time = datetime.now(timezone.utc)  # timezone-aware UTC time
-    print(f"Bot start time set to {bot.start_time.isoformat()}")
+    print(f"✅ Bot start time set to {bot.start_time.isoformat()}")
     print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
@@ -224,7 +224,7 @@ async def on_ready():
     # --------------------------------------------
     # Final debug info: bot is fully connected
     # --------------------------------------------
-    print(f"{bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
+    print(f"✅ {bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
     print("==========================================================================================")
 
 
