@@ -77,13 +77,18 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         global session
         session = aiohttp.ClientSession()
+        print("-----------------------------------------------------------------------")
         print("✅ aiohttp session started")
+        print("-----------------------------------------------------------------------")
+
 
     async def close(self):
         global session
         if session and not session.closed:
             await session.close()
+            print("-----------------------------------------------------------------------")
             print("✅ aiohttp session closed")
+            print("-----------------------------------------------------------------------")
         await super().close()
 
 bot = MyBot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
@@ -108,10 +113,12 @@ async def on_ready():
     # --------------------------------------------
     # Declare global variables to be used/modified
     # --------------------------------------------
-    global session, seen_players, erlc_welcome_status, join_leave_status, last_joinleave_ts
+    global session, seen_players, last_joinleave_ts
 
     # ⚡ Debug: Bot is starting up
+    print("-----------------------------------------------------------------------")
     print("⚡ Bot starting...")
+    print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Initialize global variables if they don't exist
@@ -119,12 +126,6 @@ async def on_ready():
     if 'seen_players' not in globals():
         # Set to keep track of players we have already seen in join logs
         seen_players = set()
-    if 'erlc_welcome_status' not in globals():
-        # Boolean flag to enable/disable ER:LC welcome messages
-        erlc_welcome_status = False
-    if 'join_leave_status' not in globals():
-        # Boolean flag to control join/leave logging
-        join_leave_status = False
     if 'last_joinleave_ts' not in globals():
         # Timestamp of the latest join/leave log processed
         last_joinleave_ts = 0
@@ -142,14 +143,17 @@ async def on_ready():
         # Sync commands globally
         await bot.tree.sync()
         print("✅ Slash commands synced!")
+        print("-----------------------------------------------------------------------")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
+        print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Set bot startup time
     # --------------------------------------------
     bot.start_time = datetime.now(timezone.utc)  # timezone-aware UTC time
     print(f"Bot start time set to {bot.start_time.isoformat()}")
+    print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Initialize aiohttp session if not already open
@@ -158,6 +162,7 @@ async def on_ready():
         # aiohttp session used for API requests
         session = aiohttp.ClientSession()
         print("✅ aiohttp session started")
+        print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Initialize seen players from ER:LC join logs
@@ -183,10 +188,12 @@ async def on_ready():
         # Set last_joinleave_ts to latest timestamp to ignore old logs
         last_joinleave_ts = max_ts
         print(f"✅ Initialized seen_players with {len(seen_players)} entries, last_joinleave_ts={last_joinleave_ts}")
+        print("-----------------------------------------------------------------------")
 
     except Exception as e:
         # Handle errors fetching join logs
         print(f"⚠️ Failed to initialize seen_players: {e}")
+        print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Start all background tasks
@@ -201,21 +208,24 @@ async def on_ready():
         discord_check_task.start()         # Checks for Discord related events         
         update_member_count_vcs.start()   # Updates member count in VCs
         print("✅ Background tasks started")
+        print("-----------------------------------------------------------------------")
     except Exception as e:
         print(f"⚠️ Error starting background tasks: {e}")
+        print("-----------------------------------------------------------------------")
 
     # --------------------------------------------
     # Start presence updater task
     # --------------------------------------------
     update_presence.start()
     print("✅ Presence updater started")
+    print("-----------------------------------------------------------------------")
 
 
     # --------------------------------------------
     # Final debug info: bot is fully connected
     # --------------------------------------------
     print(f"{bot.user} ({bot.user.id}) has connected to Discord and is monitoring the server.")
-    print("-----------------------------------------------------------------------")
+    print("==========================================================================================")
 
 
 # ---------------------- Presence Loop ----------------------
