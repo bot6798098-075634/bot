@@ -480,8 +480,8 @@ async def servers_slash(interaction: discord.Interaction):
 def synced_embed(ctx: commands.Context, synced_count: int):
     """Embed for successful sync"""
     embed = discord.Embed(
-        title=f"{tick_emoji_2} Commands Synced",
-        description=f"{tick_emoji_2} Synced **{synced_count}** application command(s).",
+        title=f"{tick_emoji} Commands Synced",
+        description=f"{tick_emoji} Synced **{synced_count}** application command(s).",
         color=0x1E77BE
     )
     if ctx.guild:
@@ -493,8 +493,8 @@ def synced_embed(ctx: commands.Context, synced_count: int):
 def failed_embed(ctx: commands.Context, error_msg: str):
     """Embed for failed sync"""
     embed = discord.Embed(
-        title=f"{failed_emoji_2} Sync Failed",
-        description=f"{failed_emoji_2} Failed to sync commands:\n```{error_msg}```",
+        title=f"{failed_emoji} Sync Failed",
+        description=f"{failed_emoji} Failed to sync commands:\n```{error_msg}```",
         color=discord.Color.red()
     )
     if ctx.guild:
@@ -515,7 +515,7 @@ async def sync(ctx: commands.Context):
             print(f"[WARN] Failed to react with failed_emoji: {e}")
         return await ctx.send(
             embed=discord.Embed(
-                title="🚫 Access Denied",
+                title=f"{failed_emoji} Access Denied",
                 description="Only the bot owner can run this command.",
                 color=discord.Color.red()
             )
@@ -527,7 +527,7 @@ async def sync(ctx: commands.Context):
         count = len(synced)
 
         try:
-            await ctx.message.add_reaction(tick_emoji_2)
+            await ctx.message.add_reaction(tick_emoji)
         except discord.HTTPException as e:
             print(f"[WARN] Failed to react with tick_emoji: {e}")
 
@@ -535,7 +535,7 @@ async def sync(ctx: commands.Context):
 
     except Exception as e:
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException:
             pass
 
@@ -561,8 +561,8 @@ def restart_embed(ctx: commands.Context):
 def fail_embed(ctx: commands.Context, error_msg: str):
     """Embed for failed restart"""
     embed = discord.Embed(
-        title=f"{failed_emoji_2} Restart Failed",
-        description=f"{failed_emoji_2} Failed to restart the bot:\n```{error_msg}```",
+        title=f"{failed_emoji} Restart Failed",
+        description=f"{failed_emoji} Failed to restart the bot:\n```{error_msg}```",
         color=discord.Color.red()
     )
     if ctx.guild:
@@ -1565,7 +1565,7 @@ async def erlc_players(interaction: discord.Interaction):
 @bot.command(name="discord")
 async def discord_cmd(ctx, subcommand: str = None):
     if not subcommand or subcommand.lower() != "check":
-        await ctx.send("❌ Unknown command. Please use `/discord check`.")
+        await ctx.send(f"{failed_emoji} Unknown command. Please use `/discord check`.")
         return
     try:
         async with ctx.typing():
@@ -1596,9 +1596,9 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
         async with session.get(url, headers=headers, timeout=10) as resp:
             if resp.status == 200:
                 return await resp.json()
-            logger.warning(f"⚠️ API returned {resp.status} for {url}")
+            logger.warning(f"{error_emoji} API returned {resp.status} for {url}")
     except Exception as e:
-        logger.error(f"❌ Exception fetching {url}: {e}")
+        logger.error(f"{failed_emoji} Exception fetching {url}: {e}")
     return None
 
 # --- Loop task: players + queue ---
@@ -1607,7 +1607,7 @@ async def update_vc_status():
     #logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
     if not guild:
-        logger.warning("⚠️ Guild not found.")
+        logger.warning(f"{error_emoji} Guild not found.")
         return
 
     async with aiohttp.ClientSession() as session:
@@ -1637,7 +1637,7 @@ async def update_vc_status():
         #logger.info(f"✅ Updated VC names: Players={player_count}/{max_players}, Queue={queue_count}")
 
     except Exception as e:
-        logger.error(f"❌ Failed to update VC names: {e}")
+        logger.error(f"{failed_emoji} Failed to update VC names: {e}")
 
 # -
 
@@ -1660,7 +1660,7 @@ async def update_vc_name_api(
     async with aiohttp.ClientSession() as session:
         server_info = await fetch_json(session, "", API_KEY)
         if not server_info:
-            await ctx.send("❌ Failed to fetch server info.")
+            await ctx.send(f"{failed_emoji} Failed to fetch server info.")
             return
         field_value = server_info.get(api_field, "N/A")
 
@@ -1674,10 +1674,10 @@ async def update_vc_name_api(
             try:
                 await vc.edit(name=new_name)
             except discord.Forbidden:
-                await ctx.send("❌ I don't have permission to edit that VC.")
+                await ctx.send(f"{failed_emoji} I don't have permission to edit that VC.")
                 return
             except discord.HTTPException as e:
-                await ctx.send(f"❌ Failed to update VC name: {e}")
+                await ctx.send(f"{failed_emoji} Failed to update VC name: {e}")
                 print(f"[WARN] Failed to update VC name: {e}")
                 return
 
@@ -1698,7 +1698,7 @@ async def join_code(ctx):
         api_field="JoinKey",
         channel_id=CODE_VC_ID,
         name_format="「🔑」Code: {value}",
-        success_message="✅ Join code VC updated to: `{value}`",
+        success_message="{tick_emoji} Join code VC updated to: `{value}`",
     )
 
 
@@ -1710,7 +1710,7 @@ async def server_name(ctx):
         api_field="Name",
         channel_id=SERVERNAME_VC_ID,
         name_format=f"{SERVERNAME_PREFIX} {{value}}",
-        success_message="✅ Server name VC updated to: `{value}`",
+        success_message="{tick_emoji} Server name VC updated to: `{value}`",
     )
 
 
@@ -1776,7 +1776,7 @@ async def run_teamkick_sequence(roblox_user: str, reason: str):
 def build_teamkick_success_embed(user: discord.User, roblox_user: str, reason: str) -> discord.Embed:
     """Build success embed for both prefix and slash teamkick commands."""
     embed = discord.Embed(
-        title="✅ Team Kick Successful",
+        title=f"{tick_emoji} Team Kick Successful",
         description=(
             f"`{roblox_user}` has been kicked off the team.\n\n"
             f"**Reason:** {reason}\n"
@@ -1792,7 +1792,7 @@ def build_teamkick_error_embed(e: Exception) -> discord.Embed:
     """Build error embed for failed teamkick attempts."""
     err_msg = get_erlc_error_message(0, exception=e)
     embed = discord.Embed(
-        title="❌ ERLC API Error",
+        title=f"{failed_emoji} ERLC API Error",
         description=err_msg,
         colour=discord.Color.red()
     )
@@ -1802,7 +1802,7 @@ def build_teamkick_error_embed(e: Exception) -> discord.Embed:
 
 def build_permission_denied_embed(prefix=False) -> discord.Embed:
     """Permission denied embed, prefix/slash variants."""
-    emoji = error_emoji if prefix else "❌"
+    emoji = error_emoji if prefix else f"{failed_emoji}"
     return discord.Embed(
         title="Permission Denied",
         description=f"{emoji} You do not have permission to use this command.",
@@ -1855,7 +1855,7 @@ async def erlc_bans(interaction: discord.Interaction):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Colour.red()
         )
         return await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1881,7 +1881,7 @@ async def erlc_bans(interaction: discord.Interaction):
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
         embed = discord.Embed(
-            title="❌ ERLC API Error",
+            title=f"{failed_emoji} ERLC API Error",
             description=error,
             colour=discord.Color.red()
         )
@@ -1908,7 +1908,7 @@ async def erlc_logs(interaction: discord.Interaction):
         role = interaction.guild.get_role(staff_role_id)
         if not role or role not in user.roles:
             return await interaction.response.send_message(
-                "❌ You don’t have permission to use this command.", ephemeral=True
+                f"{failed_emoji} You don’t have permission to use this command.", ephemeral=True
             )
 
     await interaction.response.defer()
@@ -1917,7 +1917,7 @@ async def erlc_logs(interaction: discord.Interaction):
         async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
             if r.status != 200:
                 return await interaction.followup.send(
-                    f"⚠️ API error {r.status}", ephemeral=True
+                    f"{error_emoji} API error {r.status}", ephemeral=True
                 )
             logs = await r.json()
 
@@ -2007,7 +2007,7 @@ def format_log_entry(entry: dict) -> str:
 @bot.command(name="erlc")
 async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: str = None):
     if not subcommand:
-        return await ctx.send("❌ Unknown command. Please use the `/erlc` slash command.")
+        return await ctx.send(f"{failed_emoji} Unknown command. Please use the `/erlc` slash command.")
 
     subcommand = subcommand.lower()
     handlers = {
@@ -2026,7 +2026,7 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
 
     handler = handlers.get(subcommand)
     if not handler:
-        return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
+        return await ctx.send(f"{failed_emoji} Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
 
     # Pass extra args only if needed
     if subcommand == "teamkick":
@@ -2045,7 +2045,7 @@ async def handle_erlc_vehicles(ctx):
 
     if not has_staff_role and not is_owner:
         embed = discord.Embed(title="Permission Denied",
-                              description="❌ You do not have permission to use this command.",
+                              description=f"{failed_emoji} You do not have permission to use this command.",
                               colour=discord.Colour.red())
         embed.set_footer(text=f"Running {BOT_VERSION}")
         return await ctx.send(embed=embed)
@@ -2091,7 +2091,7 @@ async def handle_erlc_vehicles(ctx):
 
     except Exception as e:
         err = get_erlc_error_message(0, exception=e)
-        error_embed = discord.Embed(title="❌ ERLC API Error", description=err, colour=discord.Color.red())
+        error_embed = discord.Embed(title=f"{failed_emoji} ERLC API Error", description=err, colour=discord.Color.red())
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
@@ -2113,7 +2113,7 @@ async def handle_erlc_modcalls(ctx):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
@@ -2178,7 +2178,7 @@ async def handle_erlc_modcalls(ctx):
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
         embed = discord.Embed(
-            title="❌ ERLC API Error",
+            title=f"{failed_emoji} ERLC API Error",
             description=error,
             colour=discord.Color.red()
         )
@@ -2202,7 +2202,7 @@ async def handle_erlc_joins(ctx):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
@@ -2270,7 +2270,7 @@ async def handle_erlc_joins(ctx):
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
         error_embed = discord.Embed(
-            title="❌ ERLC API Error",
+            title=f"{failed_emoji} ERLC API Error",
             description=error,
             colour=discord.Color.red()
         )
@@ -2290,7 +2290,7 @@ async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
 
     # Permission check
     if not await has_permission(user, guild):
-        msg = "❌ You don’t have permission to use this command."
+        msg = f"{failed_emoji} You don’t have permission to use this command."
         return await send_response(ctx_or_interaction, msg, is_interaction, ephemeral=True)
 
     if is_interaction:
@@ -2300,7 +2300,7 @@ async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
     try:
         logs = await fetch_erlc_logs()
     except RuntimeError as e:
-        return await send_response(ctx_or_interaction, f"⚠️ {e}", is_interaction, ephemeral=True)
+        return await send_response(ctx_or_interaction, f"{error_emoji} {e}", is_interaction, ephemeral=True)
 
     # Build and send embed
     embed = build_erlc_embed(guild, logs)
@@ -2337,7 +2337,7 @@ async def handle_erlc_bans(ctx):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Color.red()
         )
         return await ctx.send(embed=embed)
@@ -2366,7 +2366,7 @@ async def handle_erlc_bans(ctx):
         except Exception as e:
             error = get_erlc_error_message(0, exception=e)
             embed = discord.Embed(
-                title="❌ ERLC API Error",
+                title=f"{failed_emoji} ERLC API Error",
                 description=error,
                 colour=discord.Color.red()
             )
@@ -2377,7 +2377,7 @@ async def handle_erlc_bans(ctx):
 # --- Handler: .erlc teamkick ---
 async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
-        return await ctx.send(f"❌ Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
+        return await ctx.send(f"{failed_emoji} Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in user.roles)
@@ -3109,8 +3109,7 @@ async def before_update_member_count_vcs():
 
 
 
-failed_emoji_2 = "❌"
-tick_emoji_2 = "✅"
+
 
 # -------------------------------
 # On command error: invalid command
@@ -3120,7 +3119,7 @@ async def on_command_error(ctx, error):
     """React with failed emoji if the command does not exist."""
     if isinstance(error, commands.CommandNotFound):
         try:
-            await ctx.message.add_reaction(failed_emoji_2)
+            await ctx.message.add_reaction(failed_emoji)
             await asyncio.sleep(0.25)
             await ctx.message.add_reaction("1️⃣")
         except discord.HTTPException:
@@ -3130,8 +3129,8 @@ async def on_command_error(ctx, error):
     # Optional: handle other errors normally (e.g., missing permissions)
     raise error
 
-@bot.command(name="send_test_message")
-async def send_test_message(ctx):
+@bot.command(name="errors")
+async def errors(ctx):
     await ctx.send("<:failed:1387853598733369435> 1️⃣ = Command not found")
 
 
@@ -3184,7 +3183,7 @@ async def roblox_user(interaction: discord.Interaction, user: str):
 
             if not user_obj:
                 embed = discord.Embed(
-                    title=f"{failed_emoji_2} User Not Found",
+                    title=f"{failed_emoji} User Not Found",
                     description=f"Could not find a Roblox user for `{user}`.",
                     color=discord.Color.red(),
                 )
@@ -3243,7 +3242,7 @@ async def roblox_user(interaction: discord.Interaction, user: str):
 
         except Exception as e:
             embed = discord.Embed(
-                title=f"{failed_emoji_2} Roblox API Error",
+                title=f"{failed_emoji} Roblox API Error",
                 description=f"An error occurred while fetching data:\n`{e}`",
                 color=discord.Color.red(),
             )
@@ -3289,7 +3288,7 @@ async def handle_roblox_user(ctx, roblox_user: str):
 
                 if not user_obj:
                     embed = discord.Embed(
-                        title=f"{failed_emoji_2} User Not Found",
+                        title=f"{failed_emoji} User Not Found",
                         description=f"Could not find a Roblox user for `{roblox_user}`.",
                         color=discord.Color.red(),
                     )
@@ -3333,7 +3332,7 @@ async def handle_roblox_user(ctx, roblox_user: str):
 
             except Exception as e:
                 embed = discord.Embed(
-                    title=f"{failed_emoji_2} Roblox API Error",
+                    title=f"{failed_emoji} Roblox API Error",
                     description=f"An error occurred while fetching data:\n`{e}`",
                     color=discord.Color.red(),
                 )
@@ -3343,7 +3342,7 @@ async def handle_roblox_user(ctx, roblox_user: str):
 @bot.command(name="roblox")
 async def roblox(ctx, subcommand: str = None, roblox_user: str = None):
     if not subcommand:
-        return await ctx.send("❌ Unknown command. Use `!roblox user <username_or_id>`.")
+        return await ctx.send(f"{failed_emoji} Unknown command. Use `!roblox user <username_or_id>`.")
 
     subcommand = subcommand.lower()
     handlers = {
@@ -3352,11 +3351,11 @@ async def roblox(ctx, subcommand: str = None, roblox_user: str = None):
 
     handler = handlers.get(subcommand)
     if not handler:
-        return await ctx.send(f"❌ Unknown subcommand `{subcommand}`. Use `!roblox user <username_or_id>`.")
+        return await ctx.send(f"{failed_emoji} Unknown subcommand `{subcommand}`. Use `!roblox user <username_or_id>`.")
 
     if subcommand == "user":
         if not roblox_user:
-            return await ctx.send("❌ Please provide a username or user ID for the `user` subcommand.")
+            return await ctx.send(f"{failed_emoji} Please provide a username or user ID for the `user` subcommand.")
         await handler(ctx, roblox_user=roblox_user)
 
 
@@ -3395,7 +3394,7 @@ async def erlc_joins(interaction: discord.Interaction):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Colour.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
@@ -3459,7 +3458,7 @@ async def erlc_joins(interaction: discord.Interaction):
         # Handle error gracefully
         err_msg = get_erlc_error_message(0, exception=e)
         error_embed = discord.Embed(
-            title="❌ ERLC API Error",
+            title=f"{failed_emoji} ERLC API Error",
             description=err_msg,
             colour=discord.Color.red()
         )
@@ -3500,7 +3499,7 @@ async def erlc_modcalls(interaction: discord.Interaction):
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
-            description="❌ You do not have permission to use this command.",
+            description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Colour.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
@@ -3564,7 +3563,7 @@ async def erlc_modcalls(interaction: discord.Interaction):
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
         error_embed = discord.Embed(
-            title="❌ ERLC API Error",
+            title=f"{failed_emoji} ERLC API Error",
             description=err_msg,
             colour=discord.Color.red()
         )
@@ -3630,7 +3629,7 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
     if not has_staff_role and not is_owner:
         embed = discord.Embed(title="Permission Denied",
-                              description="❌ You do not have permission to use this command.",
+                              description=f"{failed_emoji} You do not have permission to use this command.",
                               colour=discord.Colour.red())
         embed.set_footer(text=f"Running {BOT_VERSION}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -3680,7 +3679,7 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
-        error_embed = discord.Embed(title="❌ ERLC API Error", description=err_msg, colour=discord.Color.red())
+        error_embed = discord.Embed(title=f"{failed_emoji} ERLC API Error", description=err_msg, colour=discord.Color.red())
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
