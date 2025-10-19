@@ -490,26 +490,19 @@ async def servers_slash(interaction: discord.Interaction):
 def synced_embed(ctx: commands.Context, synced_count: int):
     """Embed for successful sync"""
     embed = discord.Embed(
-        title=f"{tick_emoji} Commands Synced",
         description=f"{tick_emoji} Synced **{synced_count}** application command(s).",
         color=0x1E77BE
     )
-    if ctx.guild:
-        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
     return embed
 
 
 def failed_embed(ctx: commands.Context, error_msg: str):
     """Embed for failed sync"""
     embed = discord.Embed(
-        title=f"{failed_emoji} Sync Failed",
+        title=f"{failed_emoji} Error",
         description=f"{failed_emoji} Failed to sync commands:\n```{error_msg}```",
         color=discord.Color.red()
     )
-    if ctx.guild:
-        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
     return embed
 
 # --------------------------
@@ -541,7 +534,7 @@ async def sync(ctx: commands.Context):
         except discord.HTTPException as e:
             print(f"[WARN] Failed to react with tick_emoji: {e}")
 
-        await ctx.send(embed=synced_embed(ctx, count))
+        await ctx.message.reply(embed=synced_embed(ctx, count))
 
     except Exception as e:
         try:
@@ -549,7 +542,7 @@ async def sync(ctx: commands.Context):
         except discord.HTTPException:
             pass
 
-        await ctx.send(embed=failed_embed(ctx, str(e)))
+        await ctx.message.reply(embed=failed_embed(ctx, str(e)))
         print(f"[ERROR] !sync failed: {e}")
 
 # --
@@ -558,13 +551,9 @@ async def sync(ctx: commands.Context):
 def restart_embed(ctx: commands.Context):
     """Embed for restarting the bot"""
     embed = discord.Embed(
-        title=f"{ping_emoji} Restarting Bot",
-        description="♻️ The bot is restarting...",
+        description="♻️ The bot is rebooting...",
         color=0x1E77BE
     )
-    if ctx.guild:
-        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
     return embed
 
 # make fail embed
@@ -580,9 +569,9 @@ def fail_embed(ctx: commands.Context, error_msg: str):
         embed.set_footer(text=f"Running {BOT_VERSION}")
     return embed
 
-@bot.command(name="restart")
-async def restart(ctx):
-    """Owner-only: restart the bot"""
+@bot.command(name="reboot")
+async def reboot(ctx):
+    """Owner-only: reboot the bot"""
     if ctx.author.id != OWNER_ID:
         # react with failed emoji for non-owner
         try:
@@ -1152,13 +1141,13 @@ def get_erlc_error_message(http_status: int, api_code: int = None, exception: Ex
     """
     messages = {
         # HTTP errors
-        400: f"{error_emoji} **400 – Bad Request**: The request was malformed or invalid.",
-        403: f"{error_emoji} **403 – Unauthorized**: You do not have permission to access this resource.",
-        422: f"{error_emoji} **422 – No Players**: The private server has no players in it.",
+        400: f"The request was malformed or invalid.",
+        403: f"You do not have permission to access this resource.",
+        422: f"The private server has no players in it.",
 
         # API codes
-        0: "Unknown error occurred. If this is persistent, contact PRC via an API ticket.",
-        1001: "An error occurred communicating with Roblox / the in-game private server.",
+        0: "Unknown error occurred.",
+        500: "An error occurred communicating with Roblox / the in-game private server.",
         1002: "An internal system error occurred.",
         2000: "You did not provide a server-key.",
         2001: "You provided an incorrectly formatted server-key.",
@@ -1167,7 +1156,7 @@ def get_erlc_error_message(http_status: int, api_code: int = None, exception: Ex
         2004: "Your server-key is currently banned from accessing the API.",
         3001: "You did not provide a valid command in the request body.",
         3002: "The server you are attempting to reach is currently offline (has no players).",
-        4001: "You are being rate limited.",
+        429: "You are being rate limited.",
         4002: "The command you are attempting to run is restricted.",
         4003: "The message you're trying to send is prohibited.",
         9998: "The resource you are accessing is restricted.",
@@ -1606,9 +1595,9 @@ async def fetch_json(session: aiohttp.ClientSession, path: str, server_key: str)
         async with session.get(url, headers=headers, timeout=10) as resp:
             if resp.status == 200:
                 return await resp.json()
-            logger.warning(f"{error_emoji} API returned {resp.status} for {url}")
+            logger.warning(f"API returned {resp.status} for {url}")
     except Exception as e:
-        logger.error(f"{failed_emoji} Exception fetching {url}: {e}")
+        logger.error(f"Exception fetching {url}: {e}")
     return None
 
 # --- Loop task: players + queue ---
@@ -1617,7 +1606,7 @@ async def update_vc_status():
     #logger.info("🔄 Running VC update loop...")
     guild = bot.get_guild(1343179590247645205)
     if not guild:
-        logger.warning(f"{error_emoji} Guild not found.")
+        logger.warning(f"Guild not found.")
         return
 
     async with aiohttp.ClientSession() as session:
@@ -1659,44 +1648,68 @@ async def update_vc_name_api(
     name_format: str,
     success_message: str,
 ):
-    """Generic helper for updating a VC name based on API field."""
+    """Generic helper for updating a VC name based on API field, with full error embed handling."""
     if ctx.author.id != OWNER_ID:
         try:
             await ctx.message.add_reaction(failed_emoji)
-        except discord.HTTPException as e:
-            print(f"[WARN] Failed to react with failed_emoji: {e}")
+        except Exception:
+            pass
         return
 
-    async with aiohttp.ClientSession() as session:
-        server_info = await fetch_json(session, "", API_KEY)
-        if not server_info:
-            await ctx.send(f"{failed_emoji} Failed to fetch server info.")
-            return
-        field_value = server_info.get(api_field, "N/A")
-
-    guild = ctx.guild
-    if not guild:
-        return
-    vc = guild.get_channel(channel_id)
-    if vc:
-        new_name = name_format.format(value=field_value)
-        if vc.name != new_name:
-            try:
-                await vc.edit(name=new_name)
-            except discord.Forbidden:
-                await ctx.send(f"{failed_emoji} I don't have permission to edit that VC.")
-                return
-            except discord.HTTPException as e:
-                await ctx.send(f"{failed_emoji} Failed to update VC name: {e}")
-                print(f"[WARN] Failed to update VC name: {e}")
-                return
+    bypass_message = None  # If you want to simulate owner bypass, can be used later
 
     try:
-        await ctx.message.add_reaction(tick_emoji)
-    except discord.HTTPException as e:
-        print(f"[WARN] Failed to react with tick_emoji: {e}")
+        # --- Fetch server info ---
+        async with aiohttp.ClientSession() as session:
+            server_info = await fetch_json(session, "", API_KEY)
 
-    await ctx.send(success_message.format(value=field_value))
+        if not server_info:
+            raise Exception("No data returned from server API")
+
+        field_value = server_info.get(api_field, "N/A")
+
+        guild = ctx.guild
+        if not guild:
+            raise Exception("No guild found for this context")
+
+        vc = guild.get_channel(channel_id)
+        if vc:
+            new_name = name_format.format(value=field_value)
+            if vc.name != new_name:
+                try:
+                    await vc.edit(name=new_name)
+                except discord.Forbidden:
+                    raise Exception("I don't have permission to edit that VC")
+                except discord.HTTPException as e:
+                    raise Exception(f"Failed to update VC name: {e}")
+
+        # Safe tick emoji
+        try:
+            await ctx.message.add_reaction(tick_emoji)
+        except Exception:
+            pass
+
+        # Send success message
+        await ctx.send(success_message.format(value=field_value))
+
+    except Exception as e:
+        # --- Error Handling in Embed ---
+        err_msg = get_erlc_error_message(0, exception=e)
+        error_embed = discord.Embed(
+            title=f"{failed_emoji} ER:LC API Error",
+            description=err_msg,
+            colour=discord.Color.red()
+        )
+        error_embed.set_footer(text=f"Running {BOT_VERSION}")
+
+        if bypass_message:
+            await bypass_message.edit(embed=error_embed)
+        else:
+            await ctx.send(embed=error_embed)
+
+
+
+
 
 
 
@@ -1939,7 +1952,7 @@ async def erlc_logs(interaction: discord.Interaction):
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
     if not logs:
-        embed.description = "There are no logs in-game."
+        embed.description = "> There are no logs in-game."
         return await interaction.followup.send(embed=embed)
 
     lines = []
@@ -1950,9 +1963,9 @@ async def erlc_logs(interaction: discord.Interaction):
         if isinstance(ts, (int, float)):
             t = f"<t:{int(ts)}:F>"
             if rid:
-                lines.append(f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
+                lines.append(f"> [{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
             else:
-                lines.append(f"{name} used `{cmd}` at {t}")
+                lines.append(f"> {name} used `{cmd}` at {t}")
 
     if len(logs) > 10:
         lines.append(f"...and {len(logs) - 10} more logs not shown.")
@@ -1976,7 +1989,6 @@ def build_erlc_embed(guild: discord.Guild, logs: list) -> discord.Embed:
     embed = discord.Embed(
         title=f"ER:LC Logs ({len(logs)})",
         colour=discord.Color.blue(),
-        timestamp=datetime.now()
     )
 
     # Author & footer
@@ -1989,7 +2001,7 @@ def build_erlc_embed(guild: discord.Guild, logs: list) -> discord.Embed:
 
     # No logs found
     if not logs:
-        embed.description = "There are no logs in-game."
+        embed.description = "> There are no logs in-game."
         return embed
 
     # Format log entries
@@ -2009,8 +2021,8 @@ def format_log_entry(entry: dict) -> str:
     t = f"<t:{int(ts)}:F>" if isinstance(ts, (int, float)) else "Unknown time"
 
     if rid:
-        return f"[{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}"
-    return f"{name} used `{cmd}` at {t}"
+        return f"> [{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}"
+    return f"> {name} used `{cmd}` at {t}"
 
 # ---------------------- prefix commands that have erlc at the start .erlc info, .erlc players, .erlc code, .erlc kills, .erlc command ----------------------
 
@@ -3118,25 +3130,48 @@ async def before_update_member_count_vcs():
 
 
 
-
+failed_emoji_2 = "❌"
 
 
 # -------------------------------
 # On command error: invalid command
 # -------------------------------
+ignored_channels = [1346535112325468240]  # channel IDs to ignore
+ignored_roles = []    # role IDs to ignore
+ignored_users = []    # user IDs to ignore
+
 @bot.event
 async def on_command_error(ctx, error):
-    """React with failed emoji if the command does not exist."""
+    """React with failed emoji if the command does not exist, ignoring specific users, roles, channels, and fake commands with dots."""
+    
+    # Ignore certain channels
+    if ctx.channel.id in ignored_channels:
+        return
+    
+    # Ignore certain users
+    if ctx.author.id in ignored_users:
+        return
+
+    # Ignore users with specific roles
+    if any(role.id in ignored_roles for role in ctx.author.roles):
+        return
+
+    # Ignore fake dot commands
+    # Example: ".", "..", "...", "....." etc.
+    if re.fullmatch(r"\.+", ctx.message.content.strip()):
+        return
+
+    # Handle CommandNotFound
     if isinstance(error, commands.CommandNotFound):
         try:
-            await ctx.message.add_reaction(failed_emoji)
+            await ctx.message.add_reaction(failed_emoji_2)
             await asyncio.sleep(0.25)
             await ctx.message.add_reaction("1️⃣")
         except discord.HTTPException:
-            pass  # Ignore if bot can't react (no permission, etc.)
+            print(f"[DEBUG] Could not react to message ID {ctx.message.id} for CommandNotFound.")
         return  # Prevent further error messages
 
-    # Optional: handle other errors normally (e.g., missing permissions)
+    # Raise other errors normally
     raise error
 
 @bot.command(name="errors")
@@ -3825,7 +3860,90 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
 
 
+@bot.command()
+async def copy(ctx, message_id: int = None):
+    """Copy a message by ID or by replying to it."""
 
+    # Permission check
+    if ctx.author.id != OWNER_ID:
+        await ctx.message.add_reaction(failed_emoji)
+        return
+
+    # Optionally delete command message
+    await ctx.message.delete()
+
+    target_message = None
+
+    try:
+        # If a message ID is given
+        if message_id:
+            target_message = await ctx.channel.fetch_message(message_id)
+
+        # Or if the command is replying to another message
+        elif ctx.message.reference:
+            target_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+
+        # If neither
+        else:
+            await ctx.send("⚠️ Please reply to a message or provide a message ID to copy.")
+            return
+
+        # --- Copy logic ---
+        content = target_message.content
+        embeds = target_message.embeds
+        attachments = target_message.attachments
+
+        # Handle everything (content + embeds + files)
+        files = [await a.to_file() for a in attachments] if attachments else None
+
+        if content or embeds or files:
+            await ctx.send(content=content or None, embeds=embeds or None, files=files or None)
+        else:
+            await ctx.send("⚠️ That message has no content, embeds, or attachments.")
+
+    except discord.NotFound:
+        await ctx.send("❌ Could not find a message with that ID in this channel.")
+    except discord.Forbidden:
+        await ctx.send("🚫 I don't have permission to read or send messages here.")
+    except discord.HTTPException as e:
+        await ctx.send(f"⚠️ Failed to copy message: {e}")
+
+
+
+@bot.tree.context_menu(name="Copy Message")
+async def copy_message(interaction: discord.Interaction, message: discord.Message):
+    """Right-click > Apps > Copy Message"""
+
+    # Debug log
+    print(f"[DEBUG] interaction.user.id = {interaction.user.id} | OWNER_ID = {OWNER_ID} ({type(OWNER_ID)})")
+
+    # ✅ Force integer comparison (prevents string/int mismatch)
+    if int(interaction.user.id) != int(owner_id):
+        await interaction.response.send_message("🚫 Unauthorized user.", ephemeral=True)
+        return
+
+    try:
+        # Copy embeds
+        if message.embeds:
+            await interaction.channel.send(embeds=message.embeds)
+
+        # Copy content
+        if message.content:
+            await interaction.channel.send(message.content)
+
+        # Copy attachments
+        if message.attachments:
+            files = [await a.to_file() for a in message.attachments]
+            await interaction.channel.send(files=files)
+
+        await interaction.response.send_message("✅ Message copied successfully!", ephemeral=True)
+
+    except discord.Forbidden:
+        await interaction.response.send_message("🚫 Missing permission to send messages.", ephemeral=True)
+    except discord.HTTPException as e:
+        await interaction.response.send_message(f"⚠️ HTTP error: {e}", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"⚠️ Unexpected error: {e}", ephemeral=True)
 
 # ---------------------- commmand info ----------------------
 
@@ -3865,7 +3983,8 @@ command_categories = {
     "💼 Owner Commands": [
         ("joincode", "Update join code VC."),
         ("servername", "Update server name VC."),
-        ("sync", "Sync all / commands.")
+        ("sync", "Sync all / commands."),
+        ("copy", "Copy a message by ID or by replying to it.")
 
     ]
 }
@@ -4044,6 +4163,10 @@ command_details = {
         "erlc vehicles": {
         "description": "View spawned vehicles (staff only, owner bypass).",
         "useage": f"`{COMMAND_PREFIX}erlc vehicles` or `/erlc vehicles`"
+    },
+        "copy": {
+        "description": "Copy a message by ID or by replying to it.",
+        "useage": f"`{COMMAND_PREFIX}copy [message_id]` or right-click a message and select 'Copy Message'"
     }
 }
 
