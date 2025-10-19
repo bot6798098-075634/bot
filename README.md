@@ -29,3 +29,4 @@ A Discord bot integrating with the **PRC API** to enhance your Emergency Respons
 
 [![CodeFactor](https://www.codefactor.io/repository/github/shadow-srpc/bot/badge)](https://www.codefactor.io/repository/github/shadow-srpc/bot)
 ![MIT License](https://img.shields.io/badge/License-MIT-green.svg)
+BATA = [![CodeFactor](https://www.codefactor.io/repository/github/shadow-srpc/bot/badge/v1.0.3)](https://www.codefactor.io/repository/github/shadow-srpc/bot/overview/v1.0.3)
