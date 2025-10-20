@@ -34,6 +34,7 @@ import io
 from typing import Union
 import shutil
 import urllib.parse
+from functools import wraps
 
 # ========================= Helpers =========================
 
@@ -43,7 +44,9 @@ seen_players = set()  # Tracks players to avoid duplicate logs
 last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
 # WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all. (bata)"
 WELCOME_MESSAGE = "bata"
-
+BLACKLIST_FILE = "data/blacklist.json"
+os.makedirs("data", exist_ok=True)
+failed_emoji_1 = "❌"
 # ========================= On/Off =========================
 
 welcome_status = True  # True = on, False = off
@@ -103,6 +106,7 @@ erlc_group = app_commands.Group(name="erlc", description="ERLC related commands"
 discord_group = app_commands.Group(name="discord", description="Discord-related commands")
 staff_group = app_commands.Group(name="staff", description="Staff-only commands")
 roblox_group = app_commands.Group(name="roblox", description="Roblox-related commands")
+session_group = app_commands.Group(name="session", description="Session management commands")
 
 # ========================= Bot on_ready =========================
 
@@ -139,6 +143,7 @@ async def on_ready():
         bot.tree.add_command(discord_group)
         bot.tree.add_command(staff_group)
         bot.tree.add_command(roblox_group)
+        bot.tree.add_command(session_group)
 
         # Sync commands globally
         await bot.tree.sync()
@@ -351,6 +356,257 @@ def get_uptime(bot) -> str:
 
 # ========================= COMMANDS =========================
 
+##############################################################
+
+# ------------------- Initialize blacklist file -------------------
+if not os.path.exists(BLACKLIST_FILE):
+    with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
+        json.dump({"users": [], "servers": [], "roles": []}, f, indent=4)
+
+# ------------------- Load/Save Blacklist -------------------
+def load_blacklist():
+    if not os.path.exists(BLACKLIST_FILE):
+        # Create file with default structure if missing
+        with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump({"users": [], "servers": [], "roles": []}, f, indent=4)
+        return {"users": [], "servers": [], "roles": []}
+    
+    try:
+        with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        # If file is empty or invalid, reset it
+        data = {"users": [], "servers": [], "roles": []}
+        with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    
+    return data
+
+def save_blacklist(data):
+    with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+# ------------------- Owner Check -------------------
+def owner_only():
+    async def predicate(ctx):
+        return ctx.author.id == OWNER_ID
+    return commands.check(predicate)
+
+# ------------------- Blacklist Check for Prefix -------------------
+@bot.before_invoke
+async def check_blacklist_prefix(ctx):
+    blacklist = load_blacklist()
+    if ctx.author.id in blacklist["users"]:
+        raise commands.CheckFailure("You are blacklisted from using the bot.")
+    if ctx.guild and ctx.guild.id in blacklist["servers"]:
+        raise commands.CheckFailure("This server is blacklisted from using the bot.")
+    if ctx.guild:
+        author_roles = [role.id for role in ctx.author.roles]
+        if any(rid in blacklist["roles"] for rid in author_roles):
+            raise commands.CheckFailure("Your role is blacklisted from using the bot.")
+
+# ------------------- Command Error Handling -------------------
+@bot.event
+async def on_command_error(ctx, error):
+    """Handles command errors with blacklist detection and friendly feedback."""
+    # Handle blacklist errors (from checks or manual)
+    if isinstance(error, commands.CheckFailure):
+        blacklist = load_blacklist()
+        user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else None
+        role_ids = [role.id for role in ctx.author.roles] if ctx.guild else []
+
+        # Determine reason
+        reason = None
+        if user_id in blacklist["users"]:
+            reason = f"❌ You (`{ctx.author}`) are blacklisted from using this bot."
+        elif guild_id and guild_id in blacklist["servers"]:
+            reason = f"❌ This server (`{ctx.guild.name}`) is blacklisted from using this bot."
+        elif any(rid in blacklist["roles"] for rid in role_ids):
+            matching_roles = [r for r in ctx.author.roles if r.id in blacklist["roles"]]
+            role_mentions = ", ".join([r.mention for r in matching_roles]) or "a blacklisted role"
+            reason = f"❌ One of your roles ({role_mentions}) is blacklisted from using this bot."
+        else:
+            reason = f"❌ You do not have permission to use this command."
+
+        embed = discord.Embed(
+            title="Access Denied",
+            description=reason,
+            color=discord.Color.red()
+        )
+        try:
+            await ctx.send(embed=embed)
+        except discord.HTTPException:
+            if DEBUG:
+                print(f"[DEBUG] Could not send blacklist embed in channel {ctx.channel.id}")
+        return
+
+    # Handle unknown commands
+    if isinstance(error, commands.CommandNotFound):
+        # Ignore dot commands (., .., ... etc)
+        content = ctx.message.content.strip()
+        if content.count('.') == len(content):
+            return
+
+        try:
+            await ctx.message.add_reaction(failed_emoji_1)
+            await asyncio.sleep(0.25)
+            await ctx.message.add_reaction("1️⃣")
+        except discord.HTTPException:
+            if DEBUG:
+                print(f"[DEBUG] Could not react to message ID {ctx.message.id} for CommandNotFound.")
+        return
+
+    # Raise all other errors normally (for debugging)
+    raise error
+
+
+def slash_blacklist_check():
+    """Decorator for slash commands to block blacklisted users/servers/roles with specific messages."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(interaction: discord.Interaction, *args, **kwargs):
+            blacklist = load_blacklist()
+            user_id = interaction.user.id
+            guild_id = interaction.guild.id if interaction.guild else None
+            role_ids = [role.id for role in interaction.user.roles] if interaction.guild else []
+
+            # Determine reason for blacklist
+            reason = None
+            if user_id in blacklist["users"]:
+                reason = f"❌ You (`{interaction.user}`) are blacklisted from using this bot."
+            elif guild_id and guild_id in blacklist["servers"]:
+                reason = f"❌ This server (`{interaction.guild.name}`) is blacklisted from using this bot."
+            elif any(rid in blacklist["roles"] for rid in role_ids):
+                matching_roles = [r for r in interaction.user.roles if r.id in blacklist["roles"]]
+                role_mentions = ", ".join([r.mention for r in matching_roles]) or "a blacklisted role"
+                reason = f"❌ One of your roles ({role_mentions}) is blacklisted from using this bot."
+
+            # If blacklisted, send embed and stop
+            if reason:
+                embed = discord.Embed(
+                    title="Access Denied",
+                    description=reason,
+                    color=discord.Color.red()
+                )
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                    else:
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                except discord.HTTPException:
+                    if DEBUG:
+                        print(f"[DEBUG] Could not send blacklist embed for user {user_id}")
+                return  # stop execution of the command
+
+            # Not blacklisted → execute command
+            await func(interaction, *args, **kwargs)
+        return wrapper
+    return decorator
+
+# ------------------- Owner Commands: Ban -------------------
+@bot.command(name="banserver")
+@owner_only()
+async def banserver(ctx, guild_id: int = None):
+    if guild_id is None and ctx.guild:
+        guild_id = ctx.guild.id
+    elif guild_id is None:
+        return await ctx.send("❌ Provide a server ID or run this in a server.")
+
+    blacklist = load_blacklist()
+    if guild_id not in blacklist["servers"]:
+        blacklist["servers"].append(guild_id)
+        save_blacklist(blacklist)
+    
+    embed = discord.Embed(
+        title="Server Blacklisted",
+        description=f"✅ Server `{guild_id}` has been blacklisted.",
+        color=discord.Color.orange()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="banuser")
+@owner_only()
+async def banuser(ctx, user_id: int):
+    blacklist = load_blacklist()
+    if user_id not in blacklist["users"]:
+        blacklist["users"].append(user_id)
+        save_blacklist(blacklist)
+    embed = discord.Embed(
+        title="User Blacklisted",
+        description=f"✅ User `{user_id}` has been blacklisted.",
+        color=discord.Color.orange()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="banrole")
+@owner_only()
+async def banrole(ctx, role_id: int):
+    blacklist = load_blacklist()
+    if role_id not in blacklist["roles"]:
+        blacklist["roles"].append(role_id)
+        save_blacklist(blacklist)
+    embed = discord.Embed(
+        title="Role Blacklisted",
+        description=f"✅ Role `{role_id}` has been blacklisted.",
+        color=discord.Color.orange()
+    )
+    await ctx.send(embed=embed)
+
+# ------------------- Owner Commands: Unban -------------------
+@bot.command(name="unbanserver")
+@owner_only()
+async def unbanserver(ctx, guild_id: int):
+    blacklist = load_blacklist()
+    if guild_id in blacklist["servers"]:
+        blacklist["servers"].remove(guild_id)
+        save_blacklist(blacklist)
+    embed = discord.Embed(
+        title="Server Unbanned",
+        description=f"✅ Server `{guild_id}` removed from blacklist.",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="unbanuser")
+@owner_only()
+async def unbanuser(ctx, user_id: int):
+    blacklist = load_blacklist()
+    if user_id in blacklist["users"]:
+        blacklist["users"].remove(user_id)
+        save_blacklist(blacklist)
+    embed = discord.Embed(
+        title="User Unbanned",
+        description=f"✅ User `{user_id}` removed from blacklist.",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="unbanrole")
+@owner_only()
+async def unbanrole(ctx, role_id: int):
+    blacklist = load_blacklist()
+    if role_id in blacklist["roles"]:
+        blacklist["roles"].remove(role_id)
+        save_blacklist(blacklist)
+    embed = discord.Embed(
+        title="Role Unbanned",
+        description=f"✅ Role `{role_id}` removed from blacklist.",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+# ------------------- View Blacklist -------------------
+@bot.command(name="viewblacklist")
+@owner_only()
+async def viewblacklist(ctx):
+    blacklist = load_blacklist()
+    embed = discord.Embed(title="Blacklist", color=discord.Color.dark_red())
+    embed.add_field(name="Users", value=", ".join(map(str, blacklist["users"])) or "None", inline=False)
+    embed.add_field(name="Servers", value=", ".join(map(str, blacklist["servers"])) or "None", inline=False)
+    embed.add_field(name="Roles", value=", ".join(map(str, blacklist["roles"])) or "None", inline=False)
+    await ctx.send(embed=embed)
+
 # ---------------------- .PING ----------------------
 
 # Helper function to create the ping embed
@@ -384,6 +640,7 @@ async def ping_prefix(ctx: commands.Context):
 
 # Slash command
 @bot.tree.command(name="ping", description="Check the bot's latency and uptime")
+@slash_blacklist_check()
 async def ping_slash(interaction: discord.Interaction):
     embed = create_ping_embed(interaction)
     await interaction.response.send_message(embed=embed)
@@ -407,6 +664,7 @@ async def uptime_prefix(ctx: commands.Context):
 # ---------------------- /uptime ----------------------
 
 @bot.tree.command(name="uptime", description="Check how long the bot has been online")
+@slash_blacklist_check()
 async def uptime_slash(interaction: discord.Interaction):
     uptime_str = get_uptime(bot)
 
@@ -1283,6 +1541,7 @@ async def erlc_info_embed(interaction: discord.Interaction) -> discord.Embed:
 # ---------------------- /erlc info ----------------------
 
 @erlc_group.command(name="info", description="Get ER:LC server info with live data.")
+@slash_blacklist_check()
 async def erlc_info(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
@@ -1336,6 +1595,7 @@ def allowed_to_run(user: discord.User, command: str, guild: discord.Guild) -> bo
 # ---------------------- /erlc command ----------------------
 
 @erlc_group.command(name="command", description="Run a command in the ERLC server")
+@slash_blacklist_check()
 async def erlc_command(interaction: discord.Interaction, command: str):
     global session
     if not session:
@@ -1453,6 +1713,7 @@ async def fetch_discord_check_embed(guild: discord.Guild) -> discord.Embed | Non
 # ---------------------- /discord check ----------------------
 
 @discord_group.command(name="check", description="Check which players are not in the Discord.")
+@slash_blacklist_check()
 async def discord_check(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await fetch_discord_check_embed(interaction.guild)
@@ -1464,6 +1725,7 @@ async def discord_check(interaction: discord.Interaction):
 # ---------------------- /erlc code ----------------------
 
 @erlc_group.command(name="code", description="Shows the ER:LC server code.")
+@slash_blacklist_check()
 async def erlc_code(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         headers = {"server-key": API_KEY}
@@ -1529,6 +1791,7 @@ async def erlc_kills(interaction: discord.Interaction):
 # ---------------------- /erlc players ----------------------
 
 @erlc_group.command(name="players", description="Shows the current players in ER:LC.")
+@slash_blacklist_check()
 async def erlc_players(interaction: discord.Interaction):
     async with aiohttp.ClientSession() as session:
         headers={"server-key": API_KEY}
@@ -1859,6 +2122,7 @@ def build_status_embed(roblox_user: str) -> discord.Embed:
     )
 
 @erlc_group.command(name="teamkick", description="Kick a Roblox player off a team (up to 1m to be done)")
+@slash_blacklist_check()
 @app_commands.describe(roblox_user="Roblox username to kick", reason="Reason for team kick")
 async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: str):
     user = interaction.user
@@ -1887,6 +2151,7 @@ async def teamkick(interaction: discord.Interaction, roblox_user: str, reason: s
 
 # --- /erlc bans (SLASH COMMAND) ---
 @erlc_group.command(name="bans", description="List active ER:LC bans (staff only, owner bypass)")
+@slash_blacklist_check()
 async def erlc_bans(interaction: discord.Interaction):
     user = interaction.user
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
@@ -1942,6 +2207,7 @@ def parse_player(player):
 
 
 @erlc_group.command(name="logs", description="Show ER:LC in-game command logs")
+@slash_blacklist_check()
 async def erlc_logs(interaction: discord.Interaction):
     user = interaction.user
     if user.id != OWNER_ID:
@@ -2854,6 +3120,7 @@ async def staff(ctx, subcommand: str = None, *, suggestion: str = None):
 
 # Public
 @bot.tree.command(name="suggest", description="Submit a public suggestion.")
+@slash_blacklist_check()
 async def suggest(interaction: discord.Interaction, suggestion: str):
     msg = await post_suggestion(interaction.user, suggestion, interaction.guild, staff_mode=False)
     if msg:
@@ -2863,6 +3130,7 @@ async def suggest(interaction: discord.Interaction, suggestion: str):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @staff_group.command(name="suggest", description="Submit a staff-only suggestion.")
+@slash_blacklist_check()
 async def staff_suggest(interaction: discord.Interaction, suggestion: str):
     staff_role = discord.utils.get(interaction.guild.roles, id=staff_role_id)
     if staff_role not in interaction.user.roles:
@@ -2978,22 +3246,41 @@ async def feedback_prefix(ctx, to: discord.Member = None, *, feedback: str = Non
 
 # ---------------- SLASH COMMAND ----------------
 @bot.tree.command(name="feedback", description="Send feedback to a staff member.")
+@slash_blacklist_check()
 async def feedback_slash(interaction: discord.Interaction, to: discord.Member, feedback: str):
     await interaction.response.defer(ephemeral=True)
     embed = await send_feedback_embed(interaction.user, to, feedback, interaction.guild)
     await interaction.followup.send(embed=embed, ephemeral=True)
 
-#--
+AFK_FILE = "data/afk.json"
 
-# AFK storage: user_id -> {"reason": str, "set_time": datetime, "pings": [(channel_id, pinger_id, timestamp)]}
-afk_users = {}
+# ---------------- INITIALIZE FILE ----------------
+os.makedirs("data", exist_ok=True)
+if not os.path.exists(AFK_FILE):
+    with open(AFK_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, indent=4)
+
+# ---------------- LOAD/SAVE HELPERS ----------------
+def load_afk():
+    with open(AFK_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_afk(data):
+    with open(AFK_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
 
 # ---------------- SET AFK ----------------
 async def set_afk(user: discord.User, reason: str):
-    afk_users[user.id] = {"reason": reason, "set_time": datetime.now(timezone.utc), "pings": []}
-    
+    afk_data = load_afk()
+    afk_data[str(user.id)] = {
+        "reason": reason or "",
+        "set_time": datetime.now(timezone.utc).isoformat(),
+        "pings": []
+    }
+    save_afk(afk_data)
+
     embed = discord.Embed(
-        description=f"{tick_emoji} I have set you as AFK for: **{reason}**" if reason else "I have set you as AFK.",
+        description=f"{tick_emoji} I have set you as AFK for: **{reason}**" if reason else f"{tick_emoji} I have set you as AFK.",
         color=discord.Color.orange()
     )
     return embed
@@ -3005,6 +3292,7 @@ async def afk_prefix(ctx, *, reason: str = None):
     await ctx.send(embed=embed)
 
 @bot.tree.command(name="afk", description="Set yourself as AFK")
+@slash_blacklist_check()
 async def afk_slash(interaction: discord.Interaction, reason: str = None):
     await interaction.response.defer(ephemeral=True)
     embed = await set_afk(interaction.user, reason)
@@ -3016,33 +3304,58 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Manual un-AFK
-    if message.author.id in afk_users:
-        afk_info = afk_users.pop(message.author.id)
+    afk_data = load_afk()
+    author_id = str(message.author.id)
+
+    # 👋 Respond if the bot is pinged directly
+    if bot.user.mentioned_in(message) and len(message.mentions) == 1:
+        prefix = getattr(bot, "command_prefix", "?")
+        if callable(prefix):
+            prefix = await prefix(bot, message)
+        reply = (
+            f"hiii, I'm **{bot.user.name}**!\n"
+            f"-# My prefix in this server is `{prefix}`."
+        )
+        await message.channel.send(reply)
+        return
+
+    # 💤 Manual un-AFK (unless message starts with "-#")
+    if author_id in afk_data and not message.content.strip().startswith("-#"):
+        afk_info = afk_data.pop(author_id)
+        save_afk(afk_data)
+
         ping_lines = []
         for channel_id, pinger_id, ts in afk_info["pings"]:
             channel_link = f"<#{channel_id}>"
             pinger = bot.get_user(pinger_id)
             if pinger:
-                ping_lines.append(f"-# {pinger.name} pinged you in {channel_link} at <t:{int(ts.timestamp())}:F>")
+                ping_lines.append(
+                    f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}"
+                )
+
         if ping_lines:
-            reply_text = f"{tick_emoji} Welcome back {message.author.mention}! You were pinged:\n" + "\n".join(ping_lines)
+            reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!\n" + "\n".join(ping_lines)
         else:
-            reply_text = f"{tick_emoji} Welcome back {message.author.mention}!"
+            reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
         await message.channel.send(reply_text)
 
-    # Reply to AFK pings
+    # 📢 Reply to AFK pings
     for user in message.mentions:
-        if user.id in afk_users and user.id != message.author.id:
-            afk_info = afk_users[user.id]
-            afk_info["pings"].append((message.channel.id, message.author.id, datetime.now(timezone.utc)))
-            reply_text = f"💤 {user.display_name} is currently AFK"
+        user_id = str(user.id)
+        if user_id in afk_data and user.id != message.author.id:
+            afk_info = afk_data[user_id]
+            afk_info["pings"].append(
+                (message.channel.id, message.author.id, datetime.now(timezone.utc).timestamp())
+            )
+            save_afk(afk_data)
+
+            reply_text = f"{ping_emoji} **{user.name}** is currently AFK"
             if afk_info["reason"]:
                 reply_text += f": {afk_info['reason']}"
             await message.channel.send(reply_text)
 
+    # Continue normal bot command processing
     await bot.process_commands(message)
-
 #--
 
 SERVER_ID = 1343179590247645205
@@ -3150,46 +3463,7 @@ async def before_update_member_count_vcs():
 failed_emoji_2 = "❌"
 
 
-# -------------------------------
-# On command error: invalid command
-# -------------------------------
-ignored_channels = [1346535112325468240]  # channel IDs to ignore
-ignored_roles = []    # role IDs to ignore
-ignored_users = []    # user IDs to ignore
 
-@bot.event
-async def on_command_error(ctx, error):
-    """React with failed emoji if the command does not exist, ignoring specific users, roles, channels, and fake commands with dots."""
-    
-    # Ignore certain channels
-    if ctx.channel.id in ignored_channels:
-        return
-    
-    # Ignore certain users
-    if ctx.author.id in ignored_users:
-        return
-
-    # Ignore users with specific roles
-    if any(role.id in ignored_roles for role in ctx.author.roles):
-        return
-
-    # Ignore fake dot commands
-    # Example: ".", "..", "...", "....." etc.
-    if re.fullmatch(r"\.+", ctx.message.content.strip()):
-        return
-
-    # Handle CommandNotFound
-    if isinstance(error, commands.CommandNotFound):
-        try:
-            await ctx.message.add_reaction(failed_emoji_2)
-            await asyncio.sleep(0.25)
-            await ctx.message.add_reaction("1️⃣")
-        except discord.HTTPException:
-            print(f"[DEBUG] Could not react to message ID {ctx.message.id} for CommandNotFound.")
-        return  # Prevent further error messages
-
-    # Raise other errors normally
-    raise error
 
 @bot.command(name="errors")
 async def errors(ctx):
@@ -3207,6 +3481,7 @@ async def errors(ctx):
 # --- Roblox User Lookup ---
 
 @roblox_group.command(name="user", description="Get information about a Roblox user (username or user ID).")
+@slash_blacklist_check()
 @app_commands.describe(user="Enter a Roblox username or user ID.")
 async def roblox_user(interaction: discord.Interaction, user: str):
     await interaction.response.defer(thinking=True)
@@ -3447,6 +3722,7 @@ async def send_owner_bypass_embed(interaction: discord.Interaction, reason: str 
 
 
 @erlc_group.command(name="joins", description="View ER:LC join/leave logs (staff only, owner bypass)")
+@slash_blacklist_check()
 async def erlc_joins(interaction: discord.Interaction):
     user = interaction.user
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
@@ -3550,6 +3826,7 @@ async def erlc_joins(interaction: discord.Interaction):
 
 
 @erlc_group.command(name="modcalls", description="View ER:LC moderator call logs (staff only, owner bypass)")
+@slash_blacklist_check()
 async def erlc_modcalls(interaction: discord.Interaction):
     user = interaction.user
     guild = interaction.guild
@@ -3683,6 +3960,7 @@ async def resolve_roblox_owner_link(owner_name: str) -> str:
 # Slash command: /erlc vehicles
 # ------------------------------
 @erlc_group.command(name="vehicles", description="View spawned vehicles (staff only, owner bypass)")
+@slash_blacklist_check()
 async def erlc_vehicles(interaction: discord.Interaction):
     user = interaction.user
     guild = interaction.guild
@@ -3760,6 +4038,9 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
 
 
+
+
+        
 
 
 
@@ -3962,6 +4243,87 @@ async def copy_message(interaction: discord.Interaction, message: discord.Messag
     except Exception as e:
         await interaction.response.send_message(f"⚠️ Unexpected error: {e}", ephemeral=True)
 
+
+# ------------------- Leave Server Command -------------------
+@bot.command(name="leaveserver", help="Leave a server (owner only)")
+async def leaveserver(ctx, guild_id: int = None):
+    # Owner-only
+    if ctx.author.id != OWNER_ID:
+        embed = discord.Embed(
+            title="Access Denied",
+            description="❌ Only the bot owner can use this command.",
+            color=discord.Color.red()
+        )
+        return await ctx.send(embed=embed)
+
+    try:
+        # Case 1: Leave current server
+        if guild_id is None:
+            guild = ctx.guild
+            embed = discord.Embed(
+                title="Leaving Server",
+                description=f"👋 I will leave **{guild.name}** in 2 seconds. Goodbye!",
+                color=discord.Color.orange()
+            )
+            try:
+                await ctx.send(embed=embed)
+            except discord.Forbidden:
+                print(f"Cannot send leaving message in {guild.name}")
+            await asyncio.sleep(2)
+            await guild.leave()
+            print(f"Left server: {guild.name} ({guild.id})")
+
+        # Case 2: Leave server by ID
+        else:
+            guild = bot.get_guild(guild_id)
+            if not guild:
+                embed = discord.Embed(
+                    title="Server Not Found",
+                    description=f"❌ Could not find a guild with ID `{guild_id}` or I am not in it.",
+                    color=discord.Color.red()
+                )
+                return await ctx.send(embed=embed)
+
+            # Send embed in the **channel where command was used**
+            embed = discord.Embed(
+                title="Leaving Server",
+                description=f"👋 I am leaving **{guild.name}** (ID: {guild.id}).",
+                color=discord.Color.orange()
+            )
+            try:
+                await ctx.send(embed=embed)
+            except discord.Forbidden:
+                print(f"Cannot send leaving message in channel {ctx.channel.id}")
+
+            # Wait 2 seconds before leaving
+            await asyncio.sleep(2)
+            await guild.leave()
+            print(f"Left server: {guild.name} ({guild.id})")
+
+    except discord.Forbidden:
+        embed = discord.Embed(
+            title="Failed to Leave Server",
+            description="❌ I do not have permission to leave this server.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    except discord.HTTPException as e:
+        embed = discord.Embed(
+            title="Failed to Leave Server",
+            description=f"❌ HTTP Error: {e}",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(
+            title="Error",
+            description=f"❌ Unexpected error: {e}",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed)
+
+
+
 # ---------------------- commmand info ----------------------
 
 command_categories = {
@@ -4001,7 +4363,15 @@ command_categories = {
         ("joincode", "Update join code VC."),
         ("servername", "Update server name VC."),
         ("sync", "Sync all / commands."),
-        ("copy", "Copy a message by ID or by replying to it.")
+        ("copy", "Copy a message by ID or by replying to it."),
+        ("leaveserver", "leave the server"),
+        ("banserver", "blacklist a server"),
+        ("banuser", "blacklist a user"),
+        ("banrole", "blacklist a role"),
+        ("unbanserver", "unblacklist a server"),
+        ("unbanuser", "unblacklist a user"),
+        ("unbanrole", "unblacklist a role"),
+        ("viewblacklist", "view blacklist")
 
     ]
 }
@@ -4032,6 +4402,7 @@ async def help_prefix(ctx):
 # ---------------------- /commands ----------------------
 
 @bot.tree.command(name="commands", description="Show all available commands")
+@slash_blacklist_check()
 async def help_slash(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Bot Commands List",
@@ -4077,6 +4448,7 @@ async def command_help_prefix(ctx, command: str = None):
 # ---------------------- /help for command ----------------------
 
 @bot.tree.command(name="help", description="Get detailed help for a specific command")
+@slash_blacklist_check()
 @app_commands.describe(command="The command to get help for")
 async def command_help_slash(interaction: discord.Interaction, command: str):
     await send_command_detail(interaction, command)
@@ -4184,6 +4556,38 @@ command_details = {
         "copy": {
         "description": "Copy a message by ID or by replying to it.",
         "useage": f"`{COMMAND_PREFIX}copy [message_id]` or right-click a message and select 'Copy Message'"
+    },
+        "leaveserver": {
+        "description": "Leave a server.",
+        "useage": f"`{COMMAND_PREFIX}leaveserver [server_id]` if no server id then leaves the server its run in."
+    },
+        "banserver": {
+        "description": "Blacklist a server.",
+        "useage": f"`{COMMAND_PREFIX}banserver [server_id]` if no id then ban server its run in."
+    },
+        "banuser": {
+        "description": "Blacklist a user.",
+        "useage": f"`{COMMAND_PREFIX}banuser [user_id]`"
+    },
+        "banrole": {
+        "description": "Blacklist a role",
+        "useage": f"`{COMMAND_PREFIX}banrole [role_id]`"
+    },
+        "unbanserver": {
+        "description": "unblacklist a server.",
+        "useage": f"`{COMMAND_PREFIX}unbanserver [server_id]`"
+    },
+        "unbanuser": {
+        "description": "unblacklist a user.",
+        "useage": f"`{COMMAND_PREFIX}unbanuser [user_id]`"
+    },
+        "unbanrole": {
+        "description": "Unblacklist a role",
+        "useage": f"`{COMMAND_PREFIX}unbanrole [role_id]`"
+    },
+        "viewblacklist": {
+        "description": "View all blacklisted servers, users and, roles.",
+        "useage": f"`{COMMAND_PREFIX}viewblacklist`"
     }
 }
 
