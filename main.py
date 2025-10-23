@@ -312,21 +312,43 @@ dj_id = 1296842183344918570
 
 # ========================= IS A ROLE CALLS =========================
 
-def is_staff(): return app_commands.check(lambda i: i.guild and any(r.id == staff_role_id for r in i.user.roles))
-def is_mod(): return app_commands.check(lambda i: i.guild and any(r.id == mod_role_id for r in i.user.roles))
-def is_admin(): return app_commands.check(lambda i: i.guild and any(r.id == admin_role_id for r in i.user.roles))
-def is_superviser(): return app_commands.check(lambda i: i.guild and any(r.id == superviser_role_id for r in i.user.roles))
-def is_management(): return app_commands.check(lambda i: i.guild and any(r.id == management_role_id for r in i.user.roles))
-def is_ia(): return app_commands.check(lambda i: i.guild and any(r.id == ia_role_id for r in i.user.roles))
-def is_ownership(): return app_commands.check(lambda i: i.guild and any(r.id == ownership_role_id for r in i.user.roles))
+FAIL_EMOJI = "<:Fail:1430509022922014750>"
+ERROR_EMOJI = "<:Error:1430509027216855041>"
+SUCCESS_EMOJI = "<:Success:1430509024184504370>"
 
-# ---------------------- OTHER STAFF ROLES ----------------------
+def api_key_not_set_embed():
+    return discord.Embed(
+        description=f"{FAIL_EMOJI} You have not linked your ERLC server.",
+        color=0xff5353
+    )
 
-def is_session_manager(): return app_commands.check(lambda i: i.guild and any(r.id == session_manager_role_id for r in i.user.roles))
-def is_staff_trainer(): return app_commands.check(lambda i: i.guild and any(r.id == staff_trainer_role_id for r in i.user.roles))
-def is_event_coordinator(): return app_commands.check(lambda i: i.guild and any(r.id == event_Coordinator_role_id for r in i.user.roles))
-def is_staff_help(): return app_commands.check(lambda i: i.guild and any(r.id == staff_help_role_id for r in i.user.roles))
-def is_staff_blacklist(): return app_commands.check(lambda i: i.guild and any(r.id == staff_blacklist_role_id for r in i.user.roles))
+def not_allowed_embed():
+    return discord.Embed(
+        description=f"{FAIL_EMOJI} You are not allowed to use this command.",
+        color=0xff5353
+    )
+
+def unknown_error_embed():
+    return discord.Embed(
+        title=f"{ERROR_EMOJI} Command Error",
+        description="> An error occurred while running that command. Please contact support.",
+        color=0xb51b00
+    )
+
+def dm_block_embed():
+    return discord.Embed(
+        description=f"{FAIL_EMOJI} This command **cannot be used in DMs.**",
+        color=0xff5353
+    )
+
+@bot.command(name="embeds")
+async def embeds(ctx):
+    await ctx.send(embed=api_key_not_set_embed())
+    await ctx.send(embed=not_allowed_embed())
+    await ctx.send(embed=unknown_error_embed())
+    await ctx.send(embed=dm_block_embed())
+
+
 
 # ---------------------- USER ----------------------
 
@@ -876,21 +898,31 @@ HEADERS_POST = {
 
 # ---------------------- join/leave logs / erlc welcome message ----------------------
 
-async def fetch_joinlogs():
+# ---------------------- Utilities ----------------------
+
+async def fetch_joinlogs(session):
+    """Fetch join logs from API."""
     url = f"{API_BASE}/joinlogs"
     headers = {"server-key": API_KEY}
-    async with aiohttp.ClientSession() as session:
+
+    try:
         async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
                 if DEBUG:
                     print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch join logs: {resp.status}")
                 return []
             data = await resp.json()
+            if DEBUG:
+                print(f"[DEBUG {datetime.now(timezone.utc)}] Fetched {len(data)} join log entries")
             return data
+    except Exception as e:
+        if DEBUG:
+            print(f"[DEBUG {datetime.now(timezone.utc)}] Exception fetching join logs: {e}")
+        return []
 
 
 def parse_player(player_str):
-    """Return (username, player_id)"""
+    """Return (username, player_id) tuple."""
     try:
         username, id_str = player_str.split(":", 1)
         return username, int(id_str)
@@ -899,36 +931,37 @@ def parse_player(player_str):
 
 
 def format_player_link(username, player_id):
+    """Return a markdown link to the Roblox user profile."""
     return f"[{username}](https://www.roblox.com/users/{player_id}/profile)" if player_id else username
 
 
 def process_join_leave(entry, seen_players):
+    """Return timestamp and formatted join/leave events."""
     ts = entry.get("Timestamp", 0)
     player_str = entry.get("Player", "Unknown:0")
     joined = entry.get("Join", True)
-
     username, player_id = parse_player(player_str)
     user_link = format_player_link(username, player_id)
 
     join_event, leave_event = None, None
 
-    if joined:
-        if player_str not in seen_players:
-            join_event = f"{user_link} joined at <t:{ts}:F>"
-            seen_players.add(player_str)
-            if DEBUG:
-                print(f"[DEBUG {datetime.now(timezone.utc)}] Player joined: {player_str}")
-    else:
-        if player_str in seen_players:
-            leave_event = f"{user_link} left at <t:{ts}:F>"
-            seen_players.remove(player_str)
-            if DEBUG:
-                print(f"[DEBUG {datetime.now(timezone.utc)}] Player left: {player_str}")
+    if joined and player_str not in seen_players:
+        join_event = f"{user_link} joined at <t:{ts}:F>"
+        seen_players.add(player_str)
+        if DEBUG:
+            print(f"[DEBUG {datetime.now(timezone.utc)}] Player joined: {player_str}")
+
+    elif not joined and player_str in seen_players:
+        leave_event = f"{user_link} left at <t:{ts}:F>"
+        seen_players.remove(player_str)
+        if DEBUG:
+            print(f"[DEBUG {datetime.now(timezone.utc)}] Player left: {player_str}")
 
     return ts, join_event, leave_event
 
 
 async def send_joinleave_log_embed(channel, title, events, color=0x1E77BE):
+    """Send embed to Discord channel."""
     if not events:
         if DEBUG:
             print(f"[DEBUG {datetime.now(timezone.utc)}] No events to send for '{title}'")
@@ -947,40 +980,31 @@ async def send_joinleave_log_embed(channel, title, events, color=0x1E77BE):
 
 
 async def send_welcome_pm(username):
+    """Send welcome private message to player."""
     await send_to_game(f":pm {username} {WELCOME_MESSAGE}")
 
 
-# ------------------------------
-# Join/Leave Background Task
-# ------------------------------
+# ---------------------- Background Task ----------------------
+
 @tasks.loop(seconds=60)
 async def join_leave_log_erlc_welcome_message_task():
+    """Background task to handle join/leave events and send logs."""
     global session, last_joinleave_ts, seen_players
 
+    # Ensure aiohttp session
     if not session or session.closed:
         session = aiohttp.ClientSession()
         if DEBUG:
             print(f"[DEBUG {datetime.now(timezone.utc)}] Started new aiohttp session")
 
-    try:
-        async with session.get(f"{API_BASE}/joinlogs", headers={"server-key": API_KEY}) as resp:
-            if resp.status != 200:
-                if DEBUG:
-                    print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch join logs: {resp.status}")
-                return
-            data = await resp.json()
-            if DEBUG:
-                print(f"[DEBUG {datetime.now(timezone.utc)}] Fetched {len(data)} join log entries")
-    except Exception as e:
-        if DEBUG:
-            print(f"[DEBUG {datetime.now(timezone.utc)}] Exception fetching join logs: {e}")
-        return
-
+    # Fetch logs
+    data = await fetch_joinlogs(session)
     if not data:
         if DEBUG:
             print(f"[DEBUG {datetime.now(timezone.utc)}] No join logs returned")
         return
 
+    # Fetch Discord channel
     channel = bot.get_channel(JOIN_LEAVE_LOG_CHANNEL_ID)
     if not channel:
         try:
@@ -990,6 +1014,7 @@ async def join_leave_log_erlc_welcome_message_task():
                 print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch join/leave log channel: {e}")
             return
 
+    # Process events
     join_events, leave_events = [], []
     max_ts = last_joinleave_ts
 
@@ -997,54 +1022,70 @@ async def join_leave_log_erlc_welcome_message_task():
         ts, join_event, leave_event = process_join_leave(entry, seen_players)
         if ts <= last_joinleave_ts:
             continue
+
         if join_event:
             join_events.append(join_event)
             username = entry.get("Player", "").split(":")[0]
             await send_welcome_pm(username)
+
         if leave_event:
             leave_events.append(leave_event)
+
         max_ts = max(max_ts, ts)
 
     last_joinleave_ts = max_ts
 
+    # Send join logs immediately
     if join_events:
         await send_joinleave_log_embed(channel, "Join Log", join_events, 0x00f529)
+
+    # Wait LEAVE_LOG_DELAY seconds before sending leave logs
     if leave_events:
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         await send_joinleave_log_embed(channel, "Leave Log", leave_events, 0xf50000)
 
 
 # ------------------------------
 # Kill Log Background Task
 # ------------------------------
-@tasks.loop(seconds=120)
-async def kill_log_task():
-    global session
+# ---------------------- Kill Log Task ----------------------
 
-    if not session or session.closed:
-        session = aiohttp.ClientSession()
-        if DEBUG:
-            print(f"[DEBUG {datetime.now(timezone.utc)}] Started new aiohttp session in kill_log_task")
+async def fetch_killlogs(session):
+    """Fetch kill logs from the API."""
+    url = f"{API_BASE}/killlogs"
+    headers = {"server-key": API_KEY}
 
     try:
-        async with session.get(f"{API_BASE}/killlogs", headers={"server-key": API_KEY}) as resp:
+        async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
                 if DEBUG:
                     print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch kill logs: {resp.status}")
-                return
+                return []
             data = await resp.json()
             if DEBUG:
                 print(f"[DEBUG {datetime.now(timezone.utc)}] Fetched {len(data)} kill log entries")
+            return data
     except Exception as e:
         if DEBUG:
             print(f"[DEBUG {datetime.now(timezone.utc)}] Exception fetching kill logs: {e}")
-        return
+        return []
 
-    if not data:
-        if DEBUG:
-            print(f"[DEBUG {datetime.now(timezone.utc)}] No kill logs returned")
-        return
 
+def filter_new_kill_events(data, last_ts):
+    """Return new kill events and the latest timestamp."""
+    kill_events = []
+    latest_ts = last_ts
+    for entry in data:
+        ts = entry.get("Timestamp", 0)
+        if ts <= last_ts:
+            continue
+        kill_events.append(format_kill_entry(entry))
+        latest_ts = max(latest_ts, ts)
+    return kill_events, latest_ts
+
+
+async def get_kill_log_channel():
+    """Return the Discord channel for kill logs."""
     channel = bot.get_channel(KILL_LOG_CHANNEL_ID)
     if not channel:
         try:
@@ -1052,26 +1093,12 @@ async def kill_log_task():
         except Exception as e:
             if DEBUG:
                 print(f"[DEBUG {datetime.now(timezone.utc)}] Failed to fetch kill log channel: {e}")
-            return
+            return None
+    return channel
 
-    if not hasattr(kill_log_task, "last_ts"):
-        kill_log_task.last_ts = max(entry.get("Timestamp", 0) for entry in data)
-        if DEBUG:
-            print(f"[DEBUG {datetime.now(timezone.utc)}] Initialized kill_log_task.last_ts = {kill_log_task.last_ts}")
-        return
 
-    kill_events = []
-    latest_ts = kill_log_task.last_ts
-
-    for entry in data:
-        ts = entry.get("Timestamp", 0)
-        if ts <= kill_log_task.last_ts:
-            continue
-        kill_events.append(format_kill_entry(entry))
-        latest_ts = max(latest_ts, ts)
-
-    kill_log_task.last_ts = latest_ts
-
+async def send_kill_log_embed(channel, kill_events):
+    """Send an embed for kill events."""
     if not kill_events:
         if DEBUG:
             print(f"[DEBUG {datetime.now(timezone.utc)}] No new kill events since last check")
@@ -1088,41 +1115,101 @@ async def kill_log_task():
     if DEBUG:
         print(f"[DEBUG {datetime.now(timezone.utc)}] Sent Kill Log embed with {len(kill_events)} new entries")
 
-# ---------------------- mocall logs ----------------------
 
 @tasks.loop(seconds=120)
-async def modcall_log_task():
+async def kill_log_task():
+    """Background task to fetch and send kill logs."""
     global session
-
-    def debug_print(msg: str):
-        """Helper to print debug logs if DEBUG is enabled."""
-        if DEBUG:
-            print(f"[DEBUG {datetime.now()}] {msg}")
-
-    # Ensure aiohttp session exists
     if not session or session.closed:
         session = aiohttp.ClientSession()
-        debug_print("Started new aiohttp session for modcall_log_task")
+        if DEBUG:
+            print(f"[DEBUG {datetime.now(timezone.utc)}] Started new aiohttp session in kill_log_task")
 
-    debug_print("Running modcall_log_task...")
+    # Fetch kill logs
+    data = await fetch_killlogs(session)
+    if not data:
+        return
 
-    # Fetch modcall logs from ER:LC API
+    # Fetch Discord channel
+    channel = await get_kill_log_channel()
+    if not channel:
+        return
+
+    # Initialize last_ts on first run
+    if not hasattr(kill_log_task, "last_ts"):
+        kill_log_task.last_ts = max(entry.get("Timestamp", 0) for entry in data)
+        if DEBUG:
+            print(f"[DEBUG {datetime.now(timezone.utc)}] Initialized kill_log_task.last_ts = {kill_log_task.last_ts}")
+        return
+
+    # Filter new events
+    kill_events, latest_ts = filter_new_kill_events(data, kill_log_task.last_ts)
+    kill_log_task.last_ts = latest_ts
+
+    # Send embed if new events
+    await send_kill_log_embed(channel, kill_events)
+
+
+# ---------------------- Modcall Log Task ----------------------
+
+async def fetch_modcall_logs(session):
+    """Fetch modcall logs from the API."""
+    url = f"{API_BASE}/modcalls"
+    headers = {"server-key": API_KEY}
+
     try:
-        async with session.get(f"{API_BASE}/modcalls", headers={"server-key": API_KEY}) as resp:
+        async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
                 debug_print(f"Failed to fetch modcall logs: HTTP {resp.status}")
-                return
+                return []
             data = await resp.json()
             debug_print(f"Fetched {len(data)} modcall log entries from API")
+            return data
     except Exception as e:
         debug_print(f"Exception fetching modcall logs: {e}")
-        return
+        return []
 
-    if not data:
-        debug_print("No modcall logs returned")
-        return
 
-    # Get or fetch the channel
+def parse_player(player_raw, default_name="Unknown"):
+    """Parse 'Name:ID' string into (name, id)."""
+    try:
+        name, id_str = player_raw.split(":", 1)
+        return name, int(id_str)
+    except (ValueError, AttributeError):
+        return player_raw, 0
+
+
+def format_player_link(name, player_id):
+    """Return a Roblox profile markdown link if ID exists."""
+    return f"[{name}](https://www.roblox.com/users/{player_id}/profile)" if player_id else name
+
+
+def process_modcall_entry(entry):
+    """Return a formatted modcall string and its timestamp."""
+    ts = int(entry.get("Timestamp", 0))
+
+    # Parse caller
+    caller_name, caller_id = parse_player(entry.get("Caller", "Unknown:0"))
+
+    # Parse moderator (optional)
+    moderator_raw = entry.get("Moderator")
+    if moderator_raw:
+        mod_name, mod_id = parse_player(moderator_raw, "Unassigned")
+    else:
+        mod_name, mod_id = "Unassigned", 0
+
+    # Build links
+    caller_link = format_player_link(caller_name, caller_id)
+    moderator_link = format_player_link(mod_name, mod_id)
+
+    event_str = f"{moderator_link} responded to {caller_link} at <t:{ts}:F>"
+    debug_print(f"Processed modcall: {moderator_link} → {caller_link} at {ts}")
+
+    return ts, event_str
+
+
+async def get_modcall_channel():
+    """Return the Discord channel for modcall logs."""
     channel = bot.get_channel(MODCALL_LOG_CHANNEL_ID)
     if not channel:
         try:
@@ -1130,71 +1217,76 @@ async def modcall_log_task():
             debug_print(f"Fetched modcall log channel: {channel.name}")
         except Exception as e:
             debug_print(f"Failed to fetch modcall log channel: {e}")
-            return
+            return None
+    return channel
 
-    # Track last processed timestamp
+
+async def send_modcall_embed(channel, modcall_events):
+    """Send embed for new modcall events."""
+    if not modcall_events:
+        debug_print("No new modcall events since last run")
+        return
+
+    embed = discord.Embed(
+        title="Modcall Log",
+        description="\n".join(modcall_events),
+        colour=0xe1ff00
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    await channel.send(embed=embed)
+    debug_print(f"Sent {len(modcall_events)} new modcall event(s)")
+
+
+def debug_print(msg: str):
+    """Print debug logs if DEBUG is enabled."""
+    if DEBUG:
+        print(f"[DEBUG {datetime.now()}] {msg}")
+
+
+@tasks.loop(seconds=120)
+async def modcall_log_task():
+    """Background task to fetch and log modcall events."""
+    global session
+
+    # Ensure session
+    if not session or session.closed:
+        session = aiohttp.ClientSession()
+        debug_print("Started new aiohttp session for modcall_log_task")
+
+    debug_print("Running modcall_log_task...")
+
+    # Fetch modcall logs
+    data = await fetch_modcall_logs(session)
+    if not data:
+        debug_print("No modcall logs returned")
+        return
+
+    # Fetch channel
+    channel = await get_modcall_channel()
+    if not channel:
+        return
+
+    # Initialize last_ts on first run
     if not hasattr(modcall_log_task, "last_ts"):
-        # Initialize to the latest log on startup (skip old entries)
         modcall_log_task.last_ts = max((int(e.get("Timestamp", 0)) for e in data), default=0)
         debug_print(f"Initialized modcall_log_task.last_ts = {modcall_log_task.last_ts} (skipping old logs)")
         return
 
+    # Process entries
     modcall_events = []
     latest_ts = modcall_log_task.last_ts
 
     for entry in data:
-        ts = int(entry.get("Timestamp", 0))
+        ts, event_str = process_modcall_entry(entry)
         if ts <= modcall_log_task.last_ts:
             continue
-
-        # Parse caller
-        caller_raw = entry.get("Caller", "Unknown:0")
-        try:
-            caller_name, caller_id_str = caller_raw.split(":", 1)
-            caller_id = int(caller_id_str)
-        except (ValueError, AttributeError):
-            caller_name, caller_id = caller_raw, 0
-
-        # Parse moderator (optional)
-        moderator_raw = entry.get("Moderator")
-        if moderator_raw:
-            try:
-                mod_name, mod_id_str = moderator_raw.split(":", 1)
-                mod_id = int(mod_id_str)
-            except (ValueError, AttributeError):
-                mod_name, mod_id = moderator_raw, 0
-        else:
-            mod_name, mod_id = "Unassigned", 0
-
-        # Build links
-        caller_link = (
-            f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)"
-            if caller_id else caller_name
-        )
-        moderator_link = (
-            f"[{mod_name}](https://www.roblox.com/users/{mod_id}/profile)"
-            if mod_id else mod_name
-        )
-
-        # Add event
-        modcall_events.append(f"{moderator_link} responded to {caller_link} at <t:{ts}:F>")
+        modcall_events.append(event_str)
         latest_ts = max(latest_ts, ts)
-        debug_print(f"Processed modcall: {moderator_link} → {caller_link} at {ts}")
 
     modcall_log_task.last_ts = latest_ts
 
-    # Send new modcalls
-    if modcall_events:
-        embed = discord.Embed(
-            title="Modcall Log",
-            description="\n".join(modcall_events),
-            colour=0xe1ff00
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        await channel.send(embed=embed)
-        debug_print(f"Sent {len(modcall_events)} new modcall event(s)")
-    else:
-        debug_print("No new modcall events since last run")
+    # Send embed
+    await send_modcall_embed(channel, modcall_events)
 
 # ---------------------- team join/leave logs ----------------------
 
@@ -1564,58 +1656,66 @@ def allowed_to_run(user: discord.User, command: str, guild: discord.Guild) -> bo
 
     return False
 
-# ---------------------- /erlc command ----------------------
-@erlc_group.command(name="command", description="Run a command in the ERLC server")
-@slash_blacklist_check()
-async def erlc_command(interaction: discord.Interaction, command: str):
+# ---------------------- Helper functions ----------------------
+
+async def send_permission_denied(interaction, bypass_message=None):
+    """Send or edit a permission denied message."""
+    embed = discord.Embed(
+        title=f"Permission Denied {failed_emoji}",
+        description="You are not allowed to use this command.",
+        colour=0xE74C3C
+    )
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+async def send_command_embed(interaction, title, description, color, bypass_message=None):
+    """Send or edit a generic command embed."""
+    embed = discord.Embed(title=title, description=description, colour=color)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await interaction.followup.send(embed=embed)
+
+
+async def handle_bypass(interaction, user):
+    """Handle owner bypass logic."""
+    has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
+    is_owner = user.id == OWNER_ID
+
+    bypass_message = None
+
+    if not has_staff_role and not is_owner:
+        # Not staff and not owner → permission denied
+        await send_permission_denied(interaction)
+        return None, False
+
+    if is_owner and not has_staff_role:
+        # Owner bypass
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed)
+        await asyncio.sleep(1.5)
+        bypass_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+        return bypass_message, True
+
+    # Staff user → defer response
+    await interaction.response.defer(thinking=True)
+    return bypass_message, True
+
+
+async def execute_erlc_command(command, bypass_message=None):
+    """Send the command to the API and return success/error embed."""
     global session
     if not session:
         session = aiohttp.ClientSession()
 
-    user = interaction.user
-    guild = interaction.guild
-    base_cmd = command.split()[0].lower()
-
-    # --- Owner / Staff Bypass ---
-    has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
-    is_owner = user.id == OWNER_ID
-    bypass_message = None
-
-    if not has_staff_role and not is_owner:
-        error_embed = discord.Embed(
-            title=f"Permission Denied {failed_emoji}",
-            description="You are not allowed to use this command.",
-            colour=0xE74C3C
-        )
-        error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await interaction.response.send_message(embed=error_embed, ephemeral=True)
-
-    if is_owner and not has_staff_role:
-        bypass_embed = discord.Embed(
-            description="⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        await interaction.response.send_message(embed=bypass_embed)
-        await asyncio.sleep(1.5)
-        bypass_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-    else:
-        await interaction.response.defer(thinking=True)
-
-    # --- Permission for allowed commands ---
-    if not allowed_to_run(user, base_cmd, guild):
-        error_embed = discord.Embed(
-            title=f"Permission Denied {failed_emoji}",
-            description="You are not allowed to use this command.",
-            colour=0xE74C3C
-        )
-        error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-        return
-
-    # --- Execute Command ---
     try:
         async with session.post(
             f"{API_BASE}/command",
@@ -1624,45 +1724,61 @@ async def erlc_command(interaction: discord.Interaction, command: str):
         ) as resp:
             if resp.status != 200:
                 msg = get_erlc_error_message(resp.status)
-                error_embed = discord.Embed(
+                await send_command_embed(
+                    interaction=None,
                     title=f"Command Error {failed_emoji}",
                     description=msg,
-                    colour=0xE74C3C
+                    color=0xE74C3C,
+                    bypass_message=bypass_message
                 )
-                error_embed.set_footer(text=f"Running {BOT_VERSION}")
-                if bypass_message:
-                    await bypass_message.edit(embed=error_embed)
-                else:
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
-                return
-
-            success_embed = discord.Embed(
+                return False
+            # Success
+            await send_command_embed(
+                interaction=None,
                 title=f"Command Sent {tick_emoji}",
                 description=f"The command `{command}` has been sent successfully!",
-                colour=0x1E77BE
+                color=0x1E77BE,
+                bypass_message=bypass_message
             )
-            success_embed.set_footer(text=f"Running {BOT_VERSION}")
-            if bypass_message:
-                await bypass_message.edit(embed=success_embed)
-            else:
-                await interaction.followup.send(embed=success_embed)
-
+            return True
     except Exception as e:
         msg = get_erlc_error_message(0, exception=e)
-        error_embed = discord.Embed(
+        await send_command_embed(
+            interaction=None,
             title=f"Command Error {failed_emoji}",
             description=msg,
-            colour=0xE74C3C
+            color=0xE74C3C,
+            bypass_message=bypass_message
         )
-        error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        return False
+
+
+# ---------------------- /erlc command ----------------------
+
+@erlc_group.command(name="command", description="Run a command in the ERLC server")
+@slash_blacklist_check()
+async def erlc_command(interaction: discord.Interaction, command: str):
+    user = interaction.user
+    guild = interaction.guild
+    base_cmd = command.split()[0].lower()
+
+    # --- Handle owner/staff bypass ---
+    bypass_message, allowed_to_proceed = await handle_bypass(interaction, user)
+    if not allowed_to_proceed:
         return
 
-    # --- Log usage ---
-    await log_command(user, command)
+    # --- Permission check for allowed commands ---
+    if not allowed_to_run(user, base_cmd, guild):
+        await send_permission_denied(interaction, bypass_message=bypass_message)
+        return
+
+    # --- Execute command ---
+    success = await execute_erlc_command(command, bypass_message=bypass_message)
+
+    # --- Log command usage if successful ---
+    if success:
+        await log_command(user, command)
+
 
 def all_players_in_discord_embed(guild: discord.Guild) -> discord.Embed:
     """Embed when all players are in Discord"""
@@ -1808,13 +1924,51 @@ async def erlc_code(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# ---------------------- /erlc kills ----------------------
+# ---------------------- /erlc kills command ----------------------
+
+async def fetch_killlogs_api():
+    """Fetch kill logs from ER:LC API."""
+    async with aiohttp.ClientSession() as session:
+        headers = {"server-key": API_KEY}
+        try:
+            async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
+                if resp.status != 200:
+                    return None, resp.status
+                data = await resp.json()
+                return data, resp.status
+        except Exception as e:
+            return e, 0
+
+
+async def handle_owner_bypass(interaction, is_owner, has_staff_role):
+    """Handle owner bypass logic; return bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description=f"⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        bypass_message = await interaction.original_response()
+        await asyncio.sleep(1.5)
+    else:
+        await interaction.response.defer(thinking=True)
+    return bypass_message
+
+
+async def send_embed_or_edit(interaction, embed, bypass_message=None, ephemeral=True):
+    """Send or edit embed depending on bypass_message."""
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+
+
 @erlc_group.command(name="kills", description="Shows the recent ER:LC kill logs.")
 @slash_blacklist_check()
 async def erlc_kills(interaction: discord.Interaction):
     user = interaction.user
     guild = interaction.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == OWNER_ID
 
@@ -1829,78 +1983,125 @@ async def erlc_kills(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # --- Owner Bypass Path ---
-    bypass_message = None
-    if is_owner and not has_staff_role:
-        bypass_embed = discord.Embed(
-            description=f"⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        await interaction.response.send_message(embed=bypass_embed, ephemeral=False)
-        bypass_message = await interaction.original_response()
-        await asyncio.sleep(1.5)
-    else:
-        await interaction.response.defer(thinking=True)
+    # --- Owner bypass ---
+    bypass_message = await handle_owner_bypass(interaction, is_owner, has_staff_role)
 
     # --- Fetch kill logs ---
-    try:
-        async with aiohttp.ClientSession() as session:
-            headers = {"server-key": API_KEY}
-            async with session.get(f"{API_BASE}/killlogs", headers=headers) as resp:
-                if resp.status != 200:
-                    err_msg = f"{error_emoji} API error {resp.status}"
-                    if bypass_message:
-                        await bypass_message.edit(content=err_msg)
-                    else:
-                        await interaction.followup.send(err_msg, ephemeral=True)
-                    return
-                data = await resp.json()
+    data, status = await fetch_killlogs_api()
 
-        if not data:
-            description = "> There have not been any kill logs in-game."
-            count = 0
-        else:
-            description = "\n".join(format_kill_entry(entry) for entry in data)
-            count = len(data)
-
-        embed = discord.Embed(
-            title=f"ER:LC Kill Logs ({count})",
-            description=description,
-            colour=0x1E77BE
-        )
-        if guild:
-            embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
-
-    except Exception as e:
-        err_msg = f"{failed_emoji} Failed to fetch kill logs: `{e}`"
+    if data is None:
+        # API error
+        err_msg = f"{error_emoji} API error {status}" if status else f"{failed_emoji} Failed to fetch kill logs."
         error_embed = discord.Embed(
             title=f"{failed_emoji} ERLC API Error",
             description=err_msg,
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_embed_or_edit(interaction, error_embed, bypass_message)
+        return
+    elif isinstance(data, Exception):
+        # Network/exception error
+        err_msg = f"{failed_emoji} Failed to fetch kill logs: `{data}`"
+        error_embed = discord.Embed(
+            title=f"{failed_emoji} ERLC API Error",
+            description=err_msg,
+            colour=discord.Color.red()
+        )
+        error_embed.set_footer(text=f"Running {BOT_VERSION}")
+        await send_embed_or_edit(interaction, error_embed, bypass_message)
+        return
+
+    # --- Build kill log embed ---
+    if not data:
+        description = "> There have not been any kill logs in-game."
+        count = 0
+    else:
+        description = "\n".join(format_kill_entry(entry) for entry in data)
+        count = len(data)
+
+    embed = discord.Embed(
+        title=f"ER:LC Kill Logs ({count})",
+        description=description,
+        colour=0x1E77BE
+    )
+    if guild:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
+
+    await send_embed_or_edit(interaction, embed, bypass_message, ephemeral=False)
 
 
-# ---------------------- /erlc players ----------------------
-@erlc_group.command(name="players", description="Shows the current players in ER:LC (staff only, owner bypass).")
+
+# ---------------------- /erlc players command ----------------------
+
+async def fetch_server_info(session):
+    """Fetch ER:LC server info (current/max players)."""
+    headers = {"server-key": API_KEY}
+    async with session.get(f"{API_BASE}", headers=headers) as resp:
+        if resp.status != 200:
+            err = await get_erlc_error_message(resp)
+            return None, err
+        return await resp.json(), None
+
+
+async def fetch_players(session):
+    """Fetch ER:LC player list."""
+    headers = {"server-key": API_KEY}
+    async with session.get(f"{API_BASE}/players", headers=headers) as resp:
+        if resp.status != 200:
+            err = await get_erlc_error_message(resp)
+            return None, err
+        return await resp.json(), None
+
+
+def format_player_list(players_data):
+    """Return formatted markdown links of players."""
+    if not players_data:
+        return "> There are no players in-game."
+    lines = [
+        f'> [{p["Player"].split(":")[0]}](https://www.roblox.com/users/{p["Player"].split(":")[1]}/profile)'
+        for p in players_data
+    ]
+    return "\n".join(lines)
+
+
+async def handle_players_bypass(interaction, is_owner, has_staff_role):
+    """Handle owner bypass; returns bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed)
+        await asyncio.sleep(1.5)
+        bypass_message = await interaction.original_response()
+    else:
+        await interaction.response.defer(thinking=True)
+    return bypass_message
+
+
+async def send_embed_or_edit(interaction, embed, bypass_message=None, ephemeral=True):
+    """Send or edit embed depending on bypass_message."""
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+
+
+@erlc_group.command(
+    name="players",
+    description="Shows the current players in ER:LC (staff only, owner bypass)."
+)
 @slash_blacklist_check()
 async def erlc_players(interaction: discord.Interaction):
     user = interaction.user
+    guild = interaction.guild
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == owner_id
-    bypass_message = None
 
-    # --- Permission Check ---
+    # --- Permission check ---
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
@@ -1910,87 +2111,53 @@ async def erlc_players(interaction: discord.Interaction):
         embed.set_footer(text=f"Running {BOT_VERSION}")
         return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # --- Owner Bypass Path ---
-    if is_owner and not has_staff_role:
-        # Send bypass embed first
-        bypass_embed = discord.Embed(
-            description="⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        await interaction.response.send_message(embed=bypass_embed)
-        await asyncio.sleep(1.5)
-        bypass_message = await interaction.original_response()
-    else:
-        # Staff = normal defer
-        await interaction.response.defer(thinking=True)
+    # --- Owner bypass ---
+    bypass_message = await handle_players_bypass(interaction, is_owner, has_staff_role)
 
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"server-key": API_KEY}
+            # Fetch server info
+            server_data, err = await fetch_server_info(session)
+            if err or not server_data:
+                embed = discord.Embed(
+                    title=f"{failed_emoji} API Error",
+                    description=err or "Unknown error fetching server info",
+                    colour=discord.Color.red()
+                )
+                embed.set_footer(text=f"Running {BOT_VERSION}")
+                await send_embed_or_edit(interaction, embed, bypass_message)
+                return
 
-            # --- Fetch server info ---
-            async with session.get(f"{API_BASE}", headers=headers) as resp:
-                if resp.status != 200:
-                    err = await get_erlc_error_message(resp)
-                    embed = discord.Embed(
-                        title=f"{failed_emoji} API Error",
-                        description=err,
-                        colour=discord.Color.red()
-                    )
-                    embed.set_footer(text=f"Running {BOT_VERSION}")
-                    if bypass_message:
-                        await bypass_message.edit(embed=embed)
-                    else:
-                        await interaction.followup.send(embed=embed, ephemeral=True)
-                    return
-                server_data = await resp.json()
-                player_count = server_data.get("CurrentPlayers", 0)
-                max_player_count = server_data.get("MaxPlayers", 0)
+            player_count = server_data.get("CurrentPlayers", 0)
+            max_player_count = server_data.get("MaxPlayers", 0)
 
-            # --- Fetch player list ---
-            async with session.get(f"{API_BASE}/players", headers=headers) as resp:
-                if resp.status != 200:
-                    err = await get_erlc_error_message(resp)
-                    embed = discord.Embed(
-                        title=f"{failed_emoji} API Error",
-                        description=err,
-                        colour=discord.Color.red()
-                    )
-                    embed.set_footer(text=f"Running {BOT_VERSION}")
-                    if bypass_message:
-                        await bypass_message.edit(embed=embed)
-                    else:
-                        await interaction.followup.send(embed=embed, ephemeral=True)
-                    return
-                players_data = await resp.json()
+            # Fetch player list
+            players_data, err = await fetch_players(session)
+            if err or players_data is None:
+                embed = discord.Embed(
+                    title=f"{failed_emoji} API Error",
+                    description=err or "Unknown error fetching player list",
+                    colour=discord.Color.red()
+                )
+                embed.set_footer(text=f"Running {BOT_VERSION}")
+                await send_embed_or_edit(interaction, embed, bypass_message)
+                return
 
-        # --- Build Description ---
-        if not players_data or player_count == 0:
-            description = "> There are no players in-game."
-        else:
-            description = "\n".join(
-                [
-                    f'> [{p["Player"].split(":")[0]}](https://www.roblox.com/users/{p["Player"].split(":")[1]}/profile)'
-                    for p in players_data
-                ]
-            )
-
+        # --- Build description & embed ---
+        description = format_player_list(players_data)
         embed = discord.Embed(
             title=f"ER:LC Players ({player_count}/{max_player_count})",
             description=description,
-            colour=0x1E77BE,
+            colour=0x1E77BE
         )
-        embed.set_author(
-            name=interaction.guild.name,
-            icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
-        )
+        if guild:
+            embed.set_author(
+                name=guild.name,
+                icon_url=guild.icon.url if guild.icon else None
+            )
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        # --- Edit or Send Final Embed ---
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
+        await send_embed_or_edit(interaction, embed, bypass_message)
 
     except Exception as e:
         error_embed = discord.Embed(
@@ -1999,25 +2166,53 @@ async def erlc_players(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
+        await send_embed_or_edit(interaction, error_embed, bypass_message)
 
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
+
+
+# ---------------------- Discord Check Command ----------------------
+
+async def handle_discord_bypass(ctx, is_owner, has_staff_role):
+    """Handle owner bypass logic and return bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        bypass_message = await ctx.reply(embed=embed)
+        await asyncio.sleep(1.5)
+    else:
+        async with ctx.typing():
+            pass
+    return bypass_message
+
+
+async def send_or_edit(ctx, content=None, embed=None, bypass_message=None):
+    """Send a message or edit the bypass message if it exists."""
+    if bypass_message:
+        if embed:
+            await bypass_message.edit(embed=embed)
         else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+            await bypass_message.edit(content=content)
+    else:
+        if embed:
+            await ctx.reply(embed=embed)
+        else:
+            await ctx.reply(content)
 
-
-# ---------------------- prefix commands that have discord at the start .discord check ----------------------
 
 @bot.command(name="discord")
 async def discord_cmd(ctx, subcommand: str = None):
+    # --- Validate subcommand ---
     if not subcommand or subcommand.lower() != "check":
-        await ctx.reply(f"{failed_emoji} Unknown command. Please use `/discord check`.")
-        return
+        return await ctx.reply(f"{failed_emoji} Unknown command. Please use `/discord check`.")
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == OWNER_ID
 
+    # --- Permission check ---
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
@@ -2026,38 +2221,21 @@ async def discord_cmd(ctx, subcommand: str = None):
         )
         return await ctx.reply(embed=embed)
 
-    bypass_message = None
-    # owner bypass
-    if is_owner and not has_staff_role:
-        bypass_embed = discord.Embed(
-            description="⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        bypass_message = await ctx.reply(embed=bypass_embed)
-        await asyncio.sleep(1.5)
-    else:
-        async with ctx.typing():
-            pass
+    # --- Owner bypass ---
+    bypass_message = await handle_discord_bypass(ctx, is_owner, has_staff_role)
 
+    # --- Fetch and send embed ---
     try:
         embed = await fetch_discord_check_embed(ctx.guild)
         if embed:
-            if bypass_message:
-                await bypass_message.edit(embed=embed)
-            else:
-                await ctx.reply(embed=embed)
+            await send_or_edit(ctx, embed=embed, bypass_message=bypass_message)
         else:
             err_msg = get_erlc_error_message(0, exception="Failed to fetch check")
-            if bypass_message:
-                await bypass_message.edit(content=err_msg)
-            else:
-                await ctx.reply(err_msg)
+            await send_or_edit(ctx, content=err_msg, bypass_message=bypass_message)
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
-        if bypass_message:
-            await bypass_message.edit(content=err_msg)
-        else:
-            await ctx.reply(err_msg)
+        await send_or_edit(ctx, content=err_msg, bypass_message=bypass_message)
+
 
 # --
 
@@ -2463,12 +2641,69 @@ def parse_player(player):
 
 #-
 
+# ---------------------- /erlc logs command ----------------------
+
+async def handle_logs_bypass(interaction, is_owner, has_staff_role):
+    """Handle owner bypass logic; returns bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        bypass_message = await interaction.original_response()
+        await asyncio.sleep(1.5)
+    else:
+        await interaction.response.defer(thinking=True)
+    return bypass_message
+
+
+async def fetch_command_logs():
+    """Fetch latest ER:LC command logs from the API."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
+            if r.status != 200:
+                return None, r.status
+            return await r.json(), r.status
+
+
+def format_command_logs(logs, max_entries=10):
+    """Format the latest command logs for embed description."""
+    if not logs:
+        return "> There are no logs in-game."
+
+    lines = []
+    for entry in logs[:max_entries]:
+        name, rid = parse_player(entry.get("Player"))
+        cmd = discord.utils.escape_markdown(entry.get("Command", ""))
+        ts = entry.get("Timestamp")
+        if isinstance(ts, (int, float)):
+            t = f"<t:{int(ts)}:F>"
+            if rid:
+                lines.append(f"> [{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
+            else:
+                lines.append(f"> {name} used `{cmd}` at {t}")
+
+    if len(logs) > max_entries:
+        lines.append(f"...and {len(logs) - max_entries} more logs not shown.")
+
+    return "\n".join(lines)
+
+
+async def send_embed_or_edit(interaction, embed, bypass_message=None, ephemeral=True):
+    """Send or edit embed depending on bypass_message."""
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+
+
 @erlc_group.command(name="logs", description="Show ER:LC in-game command logs")
 @slash_blacklist_check()
 async def erlc_logs(interaction: discord.Interaction):
     user = interaction.user
     guild = interaction.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == OWNER_ID
 
@@ -2480,90 +2715,32 @@ async def erlc_logs(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # --- Owner Bypass Path ---
-    bypass_message = None
-    if is_owner and not has_staff_role:
-        # Send bypass embed first
-        bypass_embed = discord.Embed(
-            description=f"⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        await interaction.response.send_message(embed=bypass_embed, ephemeral=False)
-        bypass_message = await interaction.original_response()
-        await asyncio.sleep(1.5)
-    else:
-        # Staff: defer thinking indicator
-        await interaction.response.defer(thinking=True)
+    # --- Handle owner bypass ---
+    bypass_message = await handle_logs_bypass(interaction, is_owner, has_staff_role)
 
     # --- Fetch logs ---
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_BASE}/commandlogs", headers={"server-key": API_KEY}) as r:
-                if r.status != 200:
-                    err_msg = f"{error_emoji} API error {r.status}"
-                    if bypass_message:
-                        await bypass_message.edit(content=err_msg)
-                    else:
-                        await interaction.followup.send(err_msg, ephemeral=True)
-                    return
-                logs = await r.json()
+    logs, status = await fetch_command_logs()
+    if logs is None:
+        err_msg = f"{error_emoji} API error {status}" if status else get_erlc_error_message(0)
+        await send_embed_or_edit(interaction, discord.Embed(description=err_msg, colour=discord.Color.red()), bypass_message)
+        return
 
-        embed = discord.Embed(
-            title=f"ER:LC Logs ({len(logs)})",
-            colour=0x1E77BE
-        )
+    # --- Build embed ---
+    embed = discord.Embed(
+        title=f"ER:LC Logs ({len(logs)})",
+        colour=0x1E77BE
+    )
+    if guild:
+        embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
+    embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        if guild:
-            icon = guild.icon.url if guild.icon else None
-            embed.set_author(name=guild.name, icon_url=icon)
-            embed.set_footer(text=f"Running {BOT_VERSION}")
+    embed.description = format_command_logs(logs)
 
-        if not logs:
-            embed.description = "> There are no logs in-game."
-            if bypass_message:
-                await bypass_message.edit(embed=embed)
-            else:
-                await interaction.followup.send(embed=embed)
-            return
+    # --- Send or edit embed ---
+    await send_embed_or_edit(interaction, embed, bypass_message)
 
-        lines = []
-        for entry in logs[:10]:
-            name, rid = parse_player(entry.get("Player"))
-            cmd = discord.utils.escape_markdown(entry.get("Command", ""))
-            ts = entry.get("Timestamp")
-            if isinstance(ts, (int, float)):
-                t = f"<t:{int(ts)}:F>"
-                if rid:
-                    lines.append(f"> [{name}](https://www.roblox.com/users/{rid}/profile) used `{cmd}` at {t}")
-                else:
-                    lines.append(f"> {name} used `{cmd}` at {t}")
-
-        if len(logs) > 10:
-            lines.append(f"...and {len(logs) - 10} more logs not shown.")
-
-        embed.description = "\n".join(lines)
-
-        # Edit bypass embed or send normally
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
-
-    except Exception as e:
-        err_msg = get_erlc_error_message(0, exception=e)
-        error_embed = discord.Embed(
-            title=f"{failed_emoji} ERLC API Error",
-            description=err_msg,
-            colour=discord.Color.red()
-        )
-        error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
 
 
 #--
@@ -2781,12 +2958,58 @@ async def handle_erlc_vehicles(ctx):
 
 
 
+# ---------------------- Handler: .erlc modcalls ----------------------
 
-# --- Handler: .erlc modcalls ---
+async def handle_modcalls_bypass(ctx, is_owner, has_staff_role):
+    """Handle owner bypass logic; returns bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        bypass_message = await ctx.reply(embed=embed)
+        await asyncio.sleep(1.5)
+    else:
+        await ctx.typing()
+    return bypass_message
+
+
+def format_modcall_entries(modcalls):
+    """Format modcall entries for embed description."""
+    if not modcalls:
+        return "> There are no recent moderator call logs.", 0
+
+    lines = []
+    for entry in modcalls:
+        caller_str = entry.get("Caller", "Unknown:0")
+        moderator_str = entry.get("Moderator")
+        timestamp = entry.get("Timestamp", 0)
+
+        caller_name, caller_id = parse_player(caller_str)
+        caller_link = f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)" if caller_id else caller_name
+
+        if moderator_str:
+            mod_name, mod_id = parse_player(moderator_str)
+            mod_link = f"[{mod_name}](https://www.roblox.com/users/{mod_id}/profile)" if mod_id else mod_name
+            lines.append(f"> {caller_link} called for a mod <t:{timestamp}:R>, handled by {mod_link}")
+        else:
+            lines.append(f"> {caller_link} called for a mod <t:{timestamp}:R> (unanswered)")
+
+    return "\n".join(lines), len(lines)
+
+
+async def send_or_edit_embed(ctx, embed, bypass_message=None):
+    """Send or edit an embed depending on bypass_message."""
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await ctx.reply(embed=embed)
+
+
 async def handle_erlc_modcalls(ctx):
     user = ctx.author
     guild = ctx.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == owner_id
 
@@ -2800,61 +3023,27 @@ async def handle_erlc_modcalls(ctx):
         embed.set_footer(text=f"Running {BOT_VERSION}")
         return await ctx.reply(embed=embed)
 
-    # --- Owner Bypass Embed ---
-    bypass_message = None
-    if is_owner and not has_staff_role:
-        bypass_embed = discord.Embed(
-            description="⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        bypass_message = await ctx.reply(embed=bypass_embed)
-        await asyncio.sleep(1.5)
-    else:
-        await ctx.typing()
+    # --- Handle owner bypass ---
+    bypass_message = await handle_modcalls_bypass(ctx, is_owner, has_staff_role)
 
     try:
-        # Fetch mod call logs
+        # Fetch modcall logs
         modcalls = await fetch_api_data(f"{API_BASE}/modcalls")
 
-        if not modcalls:
-            description = "> There are no recent moderator call logs."
-            count = 0
-        else:
-            entries = []
-            for entry in modcalls:
-                caller_str = entry.get("Caller", "Unknown:0")
-                moderator_str = entry.get("Moderator", None)
-                timestamp = entry.get("Timestamp", 0)
+        description, count = format_modcall_entries(modcalls)
 
-                caller_name, caller_id = parse_player(caller_str)
-                caller_link = f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)" if caller_id else caller_name
-
-                if moderator_str:
-                    mod_name, mod_id = parse_player(moderator_str)
-                    mod_link = f"[{mod_name}](https://www.roblox.com/users/{mod_id}/profile)" if mod_id else mod_name
-                    entries.append(f"> {caller_link} called for a mod <t:{timestamp}:R>, handled by {mod_link}")
-                else:
-                    entries.append(f"> {caller_link} called for a mod <t:{timestamp}:R> (unanswered)")
-
-            count = len(entries)
-            description = "\n".join(entries)
-
-        # Create embed
+        # Build embed
         embed = discord.Embed(
             title=f"ER:LC ModCall Logs ({count})",
             description=description,
             colour=0x1E77BE
         )
-
         if guild:
             embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
         # Send final embed
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await ctx.reply(embed=embed)
+        await send_or_edit_embed(ctx, embed, bypass_message)
 
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
@@ -2864,20 +3053,61 @@ async def handle_erlc_modcalls(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
+        await send_or_edit_embed(ctx, embed, bypass_message)
 
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
+
+# ---------------------- Handler: .erlc joins ----------------------
+
+async def handle_joins_bypass(ctx, is_owner, has_staff_role):
+    """Handle owner bypass logic; returns bypass_message or None."""
+    bypass_message = None
+    if is_owner and not has_staff_role:
+        embed = discord.Embed(
+            description="⏳ Bypassing checks...",
+            colour=discord.Color.gold()
+        )
+        bypass_message = await ctx.reply(embed=embed)
+        await asyncio.sleep(1.5)
+    else:
+        await ctx.typing()
+    return bypass_message
+
+
+def format_join_leave_entries(join_logs):
+    """Format join/leave logs for embed description."""
+    if not join_logs:
+        return "> There are no recent join/leave logs.", 0
+
+    lines = []
+    for entry in join_logs:
+        player_str = entry.get("Player", "Unknown:0")
+        timestamp = entry.get("Timestamp", 0)
+        joined = entry.get("Join", True)
+
+        username, player_id = parse_player(player_str)
+        user_link = f"[{username}](https://www.roblox.com/users/{player_id}/profile)" if player_id else username
+
+        if joined:
+            lines.append(f"> {user_link} joined the server at <t:{timestamp}:R>")
         else:
-            await ctx.reply(embed=embed)
+            lines.append(f"> {user_link} left the server at <t:{timestamp}:R>")
+
+    return "\n".join(lines), len(lines)
 
 
-# --- Handler: .erlc joins ---
+async def send_or_edit_embed(ctx, embed, bypass_message=None):
+    """Send or edit an embed depending on bypass_message."""
+    if bypass_message:
+        await bypass_message.edit(embed=embed)
+    else:
+        await ctx.reply(embed=embed)
+
+
 async def handle_erlc_joins(ctx):
     user = ctx.author
     guild = ctx.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
-    is_owner = user.id == OWNER_ID
+    is_owner = user.id == owner_id
 
     # --- Permission Check ---
     if not has_staff_role and not is_owner:
@@ -2889,78 +3119,38 @@ async def handle_erlc_joins(ctx):
         embed.set_footer(text=f"Running {BOT_VERSION}")
         return await ctx.reply(embed=embed)
 
-    # --- Owner Bypass ---
-    if is_owner and not has_staff_role:
-        # Send "bypass" embed publicly
-        bypass_embed = discord.Embed(
-            description=f"⏳ Bypassing checks...",
-            colour=discord.Color.gold()
-        )
-        bypass_message = await ctx.reply(embed=bypass_embed)
-        await asyncio.sleep(1.5)
-    else:
-        # Staff get typing indicator
-        await ctx.typing()
-        bypass_message = None
+    # --- Handle owner bypass ---
+    bypass_message = await handle_joins_bypass(ctx, is_owner, has_staff_role)
 
     try:
         # Fetch join/leave logs
         join_logs = await fetch_api_data(f"{API_BASE}/joinlogs")
 
-        if not join_logs:
-            description = "> There are no recent join/leave logs."
-            count = 0
-        else:
-            entries = []
-            for entry in join_logs:
-                player_str = entry.get("Player", "Unknown:0")
-                timestamp = entry.get("Timestamp", 0)
-                joined = entry.get("Join", True)
+        description, count = format_join_leave_entries(join_logs)
 
-                username, player_id = parse_player(player_str)
-                user_link = (
-                    f"[{username}](https://www.roblox.com/users/{player_id}/profile)"
-                    if player_id else username
-                )
-
-                if joined:
-                    entries.append(f"> {user_link} joined the server at <t:{timestamp}:R>")
-                else:
-                    entries.append(f"> {user_link} left the server at <t:{timestamp}:R>")
-
-            count = len(entries)
-            description = "\n".join(entries)
-
-        # Create the embed
+        # Build embed
         embed = discord.Embed(
             title=f"ER:LC Join/Leave Logs ({count})",
             description=description,
             colour=0x1E77BE
         )
-
         if guild:
             embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        # Edit or send
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await ctx.reply(embed=embed)
+        # Send final embed
+        await send_or_edit_embed(ctx, embed, bypass_message)
 
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
-        error_embed = discord.Embed(
+        embed = discord.Embed(
             title=f"{failed_emoji} ERLC API Error",
             description=error,
             colour=discord.Color.red()
         )
-        error_embed.set_footer(text=f"Running {BOT_VERSION}")
+        embed.set_footer(text=f"Running {BOT_VERSION}")
+        await send_or_edit_embed(ctx, embed, bypass_message)
 
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await ctx.reply(embed=error_embed)
 
 async def send_response(ctx_or_interaction, content=None, embed=None, is_interaction=False, ephemeral=False):
     """Send a response depending on the context type."""
@@ -3032,7 +3222,6 @@ async def handle_erlc_logs(ctx_or_interaction, is_interaction: bool):
 async def handle_erlc_bans(ctx):
     user = ctx.author
     guild = ctx.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == OWNER_ID
 
@@ -3044,14 +3233,13 @@ async def handle_erlc_bans(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await ctx.reply(embed=embed)
-        return
+        return await ctx.reply(embed=embed)
 
     # --- Owner Bypass ---
     bypass_message = None
     if is_owner and not has_staff_role:
         bypass_embed = discord.Embed(
-            description=f"⏳ Bypassing checks...",
+            description="⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
         bypass_message = await ctx.reply(embed=bypass_embed)
@@ -3082,21 +3270,22 @@ async def handle_erlc_bans(ctx):
         else:
             await ctx.reply(embed=embed)
 
-    except Exception as e:
+    except Exception as e:  # <-- Catch only standard exceptions
         error_embed = discord.Embed(
             title=f"{failed_emoji} ERLC API Error",
             description=get_erlc_error_message(0, exception=e),
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
+
         try:
             if bypass_message:
                 await bypass_message.edit(embed=error_embed)
             else:
                 await ctx.reply(embed=error_embed)
-        except:
-            # Fallback if editing fails
-            await ctx.reply(embed=error_embed)
+        except Exception:  # fallback if editing/sending fails
+            pass
+
 
 
 
@@ -3335,22 +3524,17 @@ async def report_erlc_error(ctx, exception, context):
 
 
 
-
-
 async def send_owner_bypass_embed(interaction: discord.Interaction, reason: str = "Bypassing checks..."):
     """
     Sends a public 'Owner Bypass Activated' embed and returns the sent message.
-    This can then be edited later with logs, results, etc.
+    Can be edited later with results or logs.
     """
     embed = discord.Embed(
         description=f"⏳ {reason}",
         colour=discord.Color.gold()
     )
-
-    # Send public (non-ephemeral) message and return it for editing
     await interaction.response.send_message(embed=embed)
     return await interaction.original_response()
-
 
 
 @erlc_group.command(name="joins", description="View ER:LC join/leave logs (staff only, owner bypass)")
@@ -3368,64 +3552,49 @@ async def erlc_joins(interaction: discord.Interaction):
             colour=discord.Colour.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # --- Owner Bypass Path ---
+    # --- Owner Bypass or Staff defer ---
+    bypass_message = None
     if is_owner and not has_staff_role:
-        # Send bypass embed first
-        bypass_message = await send_owner_bypass_embed(interaction, reason="Bypassing checks...")
+        bypass_message = await send_owner_bypass_embed(interaction)
         await asyncio.sleep(1.5)
     else:
-        # Regular staff use: show "thinking" indicator
         await interaction.response.defer(thinking=True)
-        bypass_message = None
 
     try:
-        # Fetch join/leave logs
         join_logs = await fetch_api_data(f"{API_BASE}/joinlogs")
-
         if not join_logs:
             description = "> There are no recent join/leave logs."
             count = 0
         else:
             entries = []
             for entry in join_logs:
-                player_str = entry.get("Player", "Unknown:0")
-                timestamp = entry.get("Timestamp", 0)
-                joined = entry.get("Join", True)  # True = joined, False = left
-
-                username, player_id = parse_player(player_str)
+                username, player_id = parse_player(entry.get("Player", "Unknown:0"))
                 user_link = f"[{username}](https://www.roblox.com/users/{player_id}/profile)" if player_id else username
-
-                if joined:
-                    entries.append(f"> {user_link} joined the server <t:{timestamp}:R>")
+                ts = entry.get("Timestamp", 0)
+                if entry.get("Join", True):
+                    entries.append(f"> {user_link} joined the server <t:{ts}:R>")
                 else:
-                    entries.append(f"> {user_link} left the server <t:{timestamp}:R>")
-
-            count = len(entries)
+                    entries.append(f"> {user_link} left the server <t:{ts}:R>")
             description = "\n".join(entries)
+            count = len(entries)
 
-        # Create embed
         embed = discord.Embed(
             title=f"ER:LC Join/Leave Logs ({count})",
             description=description,
             colour=0x1E77BE
         )
-
-        guild = interaction.guild
-        if guild:
-            embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
+        if interaction.guild:
+            embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
             embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        # Edit owner embed or send normally
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
             await interaction.followup.send(embed=embed)
 
     except Exception as e:
-        # Handle error gracefully
         err_msg = get_erlc_error_message(0, exception=e)
         error_embed = discord.Embed(
             title=f"{failed_emoji} ERLC API Error",
@@ -3433,22 +3602,16 @@ async def erlc_joins(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
-
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
         else:
             await interaction.followup.send(embed=error_embed, ephemeral=True)
 
 
-
-
-
 @erlc_group.command(name="modcalls", description="View ER:LC moderator call logs (staff only, owner bypass)")
 @slash_blacklist_check()
 async def erlc_modcalls(interaction: discord.Interaction):
     user = interaction.user
-    guild = interaction.guild
-
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == owner_id
 
@@ -3460,58 +3623,49 @@ async def erlc_modcalls(interaction: discord.Interaction):
             colour=discord.Colour.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # --- Owner Bypass Path ---
+    # --- Owner Bypass or Staff defer ---
+    bypass_message = None
     if is_owner and not has_staff_role:
-        # Send bypass embed first
-        bypass_message = await send_owner_bypass_embed(interaction, reason="Bypassing checks...")
+        bypass_message = await send_owner_bypass_embed(interaction)
         await asyncio.sleep(1.5)
     else:
-        # Regular staff use: show "thinking" indicator
         await interaction.response.defer(thinking=True)
-        bypass_message = None
 
     try:
-        # Fetch mod call logs
         modcalls = await fetch_api_data(f"{API_BASE}/modcalls")
-
         if not modcalls:
             description = "> There are no recent moderator call logs."
             count = 0
         else:
             entries = []
             for entry in modcalls:
-                caller_str = entry.get("Caller", "Unknown:0")
-                moderator_str = entry.get("Moderator", None)
-                timestamp = entry.get("Timestamp", 0)
-
-                caller_name, caller_id = parse_player(caller_str)
+                caller_name, caller_id = parse_player(entry.get("Caller", "Unknown:0"))
                 caller_link = f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)" if caller_id else caller_name
+
+                moderator_str = entry.get("Moderator")
+                ts = entry.get("Timestamp", 0)
 
                 if moderator_str:
                     mod_name, mod_id = parse_player(moderator_str)
                     mod_link = f"[{mod_name}](https://www.roblox.com/users/{mod_id}/profile)" if mod_id else mod_name
-                    entries.append(f"> {caller_link} called for a mod <t:{timestamp}:R>, handled by {mod_link}")
+                    entries.append(f"> {caller_link} called for a mod <t:{ts}:R>, handled by {mod_link}")
                 else:
-                    entries.append(f"> {caller_link} called for a mod <t:{timestamp}:R> (unanswered)")
+                    entries.append(f"> {caller_link} called for a mod <t:{ts}:R> (unanswered)")
 
-            count = len(entries)
             description = "\n".join(entries)
+            count = len(entries)
 
-        # Create embed
         embed = discord.Embed(
             title=f"ER:LC ModCall Logs ({count})",
             description=description,
             colour=0x1E77BE
         )
-
-        if guild:
-            embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
+        if interaction.guild:
+            embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        # Edit bypass message or send normally
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
@@ -3525,11 +3679,11 @@ async def erlc_modcalls(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
-
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
         else:
             await interaction.followup.send(embed=error_embed, ephemeral=True)
+
 
 
 
@@ -3551,7 +3705,6 @@ async def resolve_roblox_owner_link(owner_name: str) -> str:
     if not owner_name:
         return "Unknown"
 
-    # Encode username for URL
     safe_name = urllib.parse.quote(owner_name)
     api_url = f"https://users.roblox.com/v1/users/search?keyword={safe_name}&limit=1"
 
@@ -3566,10 +3719,10 @@ async def resolve_roblox_owner_link(owner_name: str) -> str:
                         uname = users[0].get("name")
                         if uid and uname:
                             return f"[{uname}](https://www.roblox.com/users/{uid}/profile)"
-    except Exception:
-        pass
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        logging.warning(f"Failed to resolve Roblox username '{owner_name}': {e}")
 
-    # Fallback: generic search link
+    # Fallback: generic Roblox search link
     return f"[{owner_name}](https://www.roblox.com/users/search?keyword={safe_name})"
 
 
@@ -4343,31 +4496,31 @@ async def afk_slash(interaction: discord.Interaction, reason: str = None):
     await interaction.followup.send(embed=embed, ephemeral=False)
 
 # ---------------- AFK HANDLING ----------------
+# ---------------- AFK HANDLING ----------------
 @bot.event
-async def on_message(message):
+async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    afk_data = load_afk()
     author_id = str(message.author.id)
+    afk_data = load_afk()
+    prefix = getattr(bot, "command_prefix", "?")
+    if callable(prefix):
+        prefix = await prefix(bot, message)
 
-    # 👋 Respond only if the bot is pinged directly (ignore @here/@everyone)
-    if bot.user in message.mentions and not message.mention_everyone and len(message.mentions) == 1:
-        if message.reference and message.reference.resolved and message.reference.resolved.author.bot:
+    # ---------------- Bot Mention Greeting ----------------
+    if (
+        bot.user in message.mentions
+        and not message.mention_everyone
+        and len(message.mentions) == 1
+    ):
+        if message.reference and getattr(message.reference.resolved, "author", None) and message.reference.resolved.author.bot:
             return
-
-        prefix = getattr(bot, "command_prefix", "?")
-        if callable(prefix):
-            prefix = await prefix(bot, message)
-
-        reply = (
-            f"hiii, I'm **{bot.user.name}**!\n"
-            f"-# My prefix in this server is `{prefix}`."
-        )
+        reply = f"hiii, I'm **{bot.user.name}**!\n-# My prefix in this server is `{prefix}`."
         await message.channel.send(reply)
         return
 
-    # 💤 Manual un-AFK (unless message starts with "-#")
+    # ---------------- Manual Un-AFK ----------------
     if author_id in afk_data and not message.content.strip().startswith("-#"):
         afk_info = afk_data.pop(author_id)
         save_afk(afk_data)
@@ -4377,17 +4530,14 @@ async def on_message(message):
             channel_link = f"<#{channel_id}>"
             pinger = bot.get_user(pinger_id)
             if pinger:
-                ping_lines.append(
-                    f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}"
-                )
+                ping_lines.append(f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}")
 
         reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
         if ping_lines:
             reply_text += "\n" + "\n".join(ping_lines)
-
         await message.channel.send(reply_text)
 
-    # 📢 Reply to AFK pings
+    # ---------------- Reply to AFK Pings ----------------
     for user in message.mentions:
         user_id = str(user.id)
         if user_id in afk_data and user.id != message.author.id:
@@ -4398,26 +4548,22 @@ async def on_message(message):
             save_afk(afk_data)
 
             reply_text = f"{ping_emoji} **{user.name}** is currently AFK"
-            if afk_info.get("reason"):
-                reply_text += f": {afk_info['reason']}"
+            if reason := afk_info.get("reason"):
+                reply_text += f": {reason}"
             await message.channel.send(reply_text)
 
-    # ⚙️ Handle multiple commands in one message (split by "&&")
-    prefix = getattr(bot, "command_prefix", "?")
-    if callable(prefix):
-        prefix = await prefix(bot, message)
+    # ---------------- Multi-command Handling ----------------
+    commands_list = [cmd.strip() for cmd in message.content.split("&&") if cmd.strip()]
+    for cmd_text in commands_list:
+        if cmd_text.startswith(prefix):
+            # Create a fake message object for each sub-command
+            fake_message = message
+            fake_message.content = cmd_text
+            await bot.process_commands(fake_message)
+    
+    # ---------------- Normal command processing ----------------
+    await bot.process_commands(message)
 
-    if "&&" in message.content:
-        commands_list = [cmd.strip() for cmd in message.content.split("&&") if cmd.strip()]
-        for cmd_text in commands_list:
-            if cmd_text.startswith(prefix):
-                # Create a fake message object for each sub-command
-                fake_message = message
-                fake_message.content = cmd_text
-                await bot.process_commands(fake_message)
-    else:
-        # Continue normal command processing
-        await bot.process_commands(message)
 
 
 #--
@@ -4545,7 +4691,10 @@ async def errors(ctx):
 
 # --- Roblox User Lookup ---
 
-@roblox_group.command(name="user", description="Get information about a Roblox user (username or user ID).")
+@roblox_group.command(
+    name="user",
+    description="Get information about a Roblox user (username or user ID)."
+)
 @slash_blacklist_check()
 @app_commands.describe(user="Enter a Roblox username or user ID.")
 async def roblox_user(interaction: discord.Interaction, user: str):
@@ -4554,26 +4703,32 @@ async def roblox_user(interaction: discord.Interaction, user: str):
     async def lookup_by_id(session: aiohttp.ClientSession, user_id: int):
         url = f"https://users.roblox.com/v1/users/{user_id}"
         async with session.get(url) as r:
-            if r.status == 200:
-                return await r.json()
-            return None
+            return await r.json() if r.status == 200 else None
 
     async def lookup_by_username(session: aiohttp.ClientSession, username: str):
         url = "https://users.roblox.com/v1/usernames/users"
         payload = {"usernames": [username], "excludeBannedUsers": False}
         async with session.post(url, json=payload) as r:
             if r.status == 200:
-                data = await r.json()
-                arr = data.get("data", [])
-                if arr:
-                    return arr[0]
+                arr = (await r.json()).get("data", [])
+                return arr[0] if arr else None
             return None
+
+    async def fetch_avatar(session: aiohttp.ClientSession, user_id: int) -> str | None:
+        thumb_url = (
+            f"https://thumbnails.roblox.com/v1/users/avatar-headshot"
+            f"?userIds={user_id}&size=420x420&format=Png&isCircular=false"
+        )
+        async with session.get(thumb_url) as r:
+            if r.status == 200:
+                data = (await r.json()).get("data", [])
+                if data and data[0].get("imageUrl"):
+                    return data[0]["imageUrl"]
+        return None
 
     async with aiohttp.ClientSession() as session:
         try:
             user_obj = None
-
-            # detect numeric user ID
             if user.isdigit():
                 user_obj = await lookup_by_id(session, int(user))
                 if not user_obj:
@@ -4584,71 +4739,62 @@ async def roblox_user(interaction: discord.Interaction, user: str):
                     user_obj = await lookup_by_id(session, found["id"])
 
             if not user_obj:
-                embed = discord.Embed(
-                    title=f"{failed_emoji} User Not Found",
-                    description=f"Could not find a Roblox user for `{user}`.",
-                    color=discord.Color.red(),
+                return await interaction.followup.send(
+                    embed=discord.Embed(
+                        title=f"{failed_emoji} User Not Found",
+                        description=f"Could not find a Roblox user for `{user}`.",
+                        color=discord.Color.red(),
+                    ),
+                    ephemeral=True
                 )
-                return await interaction.followup.send(embed=embed, ephemeral=True)
 
-            # extract info
+            # Extract info
             user_id = user_obj.get("id")
             username = user_obj.get("name")
             display_name = user_obj.get("displayName") or username
             description = user_obj.get("description") or "None"
-            created = user_obj.get("created")
+            created = parse_iso_datetime(user_obj.get("created"))
             profile_url = f"https://www.roblox.com/users/{user_id}/profile"
+            avatar_url = await fetch_avatar(session, user_id)
 
-            # --- created date fix ---
-            created_dt = None
-            if created:
-                try:
-                    # Normalize Z → +00:00 and handle milliseconds
-                    clean = created.replace("Z", "+00:00")
-                    if "." in clean:
-                        clean = clean.split(".")[0] + "+00:00"
-                    created_dt = datetime.datetime.fromisoformat(clean)
-                except Exception:
-                    created_dt = None
-
-            # fetch avatar
-            avatar_url = None
-            thumb_url = (
-                f"https://thumbnails.roblox.com/v1/users/avatar-headshot"
-                f"?userIds={user_id}&size=420x420&format=Png&isCircular=false"
-            )
-            async with session.get(thumb_url) as tr:
-                if tr.status == 200:
-                    td = await tr.json()
-                    data = td.get("data")
-                    if data and isinstance(data, list) and data[0].get("imageUrl"):
-                        avatar_url = data[0]["imageUrl"]
-
-            # --- build embed ---
+            # Build embed
             embed = discord.Embed(
                 title=f"{display_name}",
                 color=0x1E77BE,
                 url=profile_url,
-                description=f"""
-> 🧾 **Name:** [@{username}]({profile_url}) ({display_name})
-> 🆔 **ID:** `{user_id}`
-> 🗒️ **Description:** {description}
-                """,
+                description=(
+                    f"> 🧾 **Name:** [@{username}]({profile_url}) ({display_name})\n"
+                    f"> 🆔 **ID:** `{user_id}`\n"
+                    f"> 🗒️ **Description:** {description}"
+                )
             )
-
             if avatar_url:
                 embed.set_thumbnail(url=avatar_url)
-
             embed.set_footer(text=f"Running {BOT_VERSION}")
             await interaction.followup.send(embed=embed)
 
         except Exception as e:
-            embed = discord.Embed(
-                title=f"{failed_emoji} Roblox API Error",
-                description=f"An error occurred while fetching data:\n`{e}`",
-                color=discord.Color.red(),
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title=f"{failed_emoji} Roblox API Error",
+                    description=f"An error occurred while fetching data:\n`{e}`",
+                    color=discord.Color.red(),
+                ),
+                ephemeral=True
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+
+# --- Helper to safely parse ISO datetime ---
+def parse_iso_datetime(iso_str: str) -> datetime.datetime | None:
+    if not iso_str:
+        return None
+    try:
+        clean = iso_str.replace("Z", "+00:00")
+        if "." in clean:
+            clean = clean.split(".")[0] + "+00:00"
+        return datetime.datetime.fromisoformat(clean)
+    except ValueError:
+        return None
+
 
 
 
@@ -5242,7 +5388,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN")
+        token = os.getenv("DISCORD_TOKEN_BATA")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
