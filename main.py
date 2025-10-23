@@ -43,11 +43,10 @@ COMMAND_PREFIX = "." # Prefix for commands
 BOT_VERSION = "v1.0.3" # version
 seen_players = set()  # Tracks players to avoid duplicate logs
 last_joinleave_ts = 0 # Timestamp of last processed join/leave log think i fogot
-# WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all. (bata)"
-WELCOME_MESSAGE = "bata"
+WELCOME_MESSAGE = "Welcome, please join the comms 8hVTv2wPCu, that's all. (bata)"
 BLACKLIST_FILE = "data/blacklist.json"
 AFK_FILE = "data/afk.json"
-failed_emoji_1 = "❌"
+
 # ========================= On/Off =========================
 
 welcome_status = True  # True = on, False = off
