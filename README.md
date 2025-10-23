@@ -27,5 +27,6 @@ A Discord bot integrating with the **PRC API** to enhance your Emergency Respons
   <b>Created by <a href="https://discord.com/users/1276264248095412387">bob076161</a> </b>
 </p>
 
-[![CodeFactor](https://www.codefactor.io/repository/github/bot6798098-075634/bot/badge)](https://www.codefactor.io/repository/github/bot6798098-075634/bot)
+[![CodeFactor](https://www.codefactor.io/repository/github/shadow-srpc/bot/badge)](https://www.codefactor.io/repository/github/shadow-srpc/bot)
 ![MIT License](https://img.shields.io/badge/License-MIT-green.svg)
+BATA = [![CodeFactor](https://www.codefactor.io/repository/github/shadow-srpc/bot/badge/v1.0.3)](https://www.codefactor.io/repository/github/shadow-srpc/bot/overview/v1.0.3)

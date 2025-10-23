@@ -228,6 +228,7 @@ async def on_ready():
     print("-----------------------------------------------------------------------")
 
 
+
     # --------------------------------------------
     # Final debug info: bot is fully connected
     # --------------------------------------------
@@ -988,6 +989,11 @@ async def send_welcome_pm(username):
 @tasks.loop(seconds=60)
 async def join_leave_log_erlc_welcome_message_task():
     """Background task to handle join/leave events and send logs."""
+# --------------------------------------------
+# Background Task: Check ER:LC Join/Leave Logs
+# --------------------------------------------
+@tasks.loop(seconds=60)
+async def join_leave_log_task():
     global session, last_joinleave_ts, seen_players
 
     # Ensure aiohttp session
@@ -1040,7 +1046,7 @@ async def join_leave_log_erlc_welcome_message_task():
 
     # Wait LEAVE_LOG_DELAY seconds before sending leave logs
     if leave_events:
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
         await send_joinleave_log_embed(channel, "Leave Log", leave_events, 0xf50000)
 
 
@@ -1341,6 +1347,21 @@ async def team_join_leave_log_task():
     else:
         if DEBUG:
             print(f"[DEBUG {datetime.now().isoformat()}] No new team changes detected.")
+     #   print(f"[DEBUG] Found {len(join_events)} joins and {len(leave_events)} leaves.")
+      #  print("[DEBUG] Waiting 10 seconds before sending team logs to allow batching...")
+        
+
+        # Re-check if new events appeared during delay (optional — can skip)
+        # No re-fetch here to keep simple
+
+        # Send batched logs
+        await send_team_joinleave__log_embed(channel, "Team Leave Log", leave_events)
+        await asyncio.sleep(10)  # delay to prevent spam when users switch fast
+        await send_team_joinleave__log_embed(channel, "Team Join Log", join_events)
+      #  print("[DEBUG] Sent team join/leave embeds.")
+    else:
+       # print("[DEBUG] No team changes detected.")
+       pass
 
 
 # --- Helper Functions ---
@@ -2311,6 +2332,7 @@ async def update_vc_name_api(
     success_message: str,
 ):
     """Generic helper for updating a VC name based on API field, all messages are embeds."""
+    """Generic helper for updating a VC name based on API field."""
     if ctx.author.id != OWNER_ID:
         return  # Not owner, do nothing
 
@@ -2321,6 +2343,8 @@ async def update_vc_name_api(
         async with aiohttp.ClientSession() as session:
             server_info = await fetch_json(session, "", API_KEY)
 
+    async with aiohttp.ClientSession() as session:
+        server_info = await fetch_json(session, "", API_KEY)
         if not server_info:
             raise Exception("No data returned from server API")
 
@@ -2357,6 +2381,27 @@ async def update_vc_name_api(
             color=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
+    guild = ctx.guild
+    if not guild:
+        return
+    vc = guild.get_channel(channel_id)
+    if vc:
+        new_name = name_format.format(value=field_value)
+        if vc.name != new_name:
+            try:
+                await vc.edit(name=new_name)
+            except discord.Forbidden:
+                await ctx.send("❌ I don't have permission to edit that VC.")
+                return
+            except discord.HTTPException as e:
+                await ctx.send(f"❌ Failed to update VC name: {e}")
+                print(f"[WARN] Failed to update VC name: {e}")
+                return
+
+    try:
+        await ctx.message.add_reaction(tick_emoji)
+    except discord.HTTPException as e:
+        print(f"[WARN] Failed to react with tick_emoji: {e}")
 
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
@@ -2364,7 +2409,7 @@ async def update_vc_name_api(
             await ctx.reply(embed=error_embed)
 
 
-# ---------------------- Commands ----------------------
+
 @bot.command(name="joincode")
 async def join_code(ctx):
     """Owner-only: update join code VC"""
