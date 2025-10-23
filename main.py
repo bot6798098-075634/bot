@@ -3270,7 +3270,8 @@ async def handle_erlc_bans(ctx):
         else:
             await ctx.reply(embed=embed)
 
-    except Exception as e:  # <-- Catch only standard exceptions
+    except Exception as e:  # only catch standard exceptions
+        logger.exception("Failed to fetch or send ERLC bans data")  # log full traceback
         error_embed = discord.Embed(
             title=f"{failed_emoji} ERLC API Error",
             description=get_erlc_error_message(0, exception=e),
@@ -3283,8 +3284,9 @@ async def handle_erlc_bans(ctx):
                 await bypass_message.edit(embed=error_embed)
             else:
                 await ctx.reply(embed=error_embed)
-        except Exception:  # fallback if editing/sending fails
-            pass
+        except (discord.DiscordException, asyncio.TimeoutError) as edit_err:
+            # Log editing failure instead of passing silently
+            logger.error("Failed to send or edit the error embed: %s", edit_err)
 
 
 
@@ -3537,14 +3539,14 @@ async def send_owner_bypass_embed(interaction: discord.Interaction, reason: str 
     return await interaction.original_response()
 
 
-@erlc_group.command(name="joins", description="View ER:LC join/leave logs (staff only, owner bypass)")
-@slash_blacklist_check()
-async def erlc_joins(interaction: discord.Interaction):
+# ------------------- HELPERS -------------------
+
+async def check_staff_or_owner(interaction: discord.Interaction) -> tuple[bool, discord.Message | None]:
+    """Checks permissions and handles owner bypass. Returns (has_permission, bypass_message)."""
     user = interaction.user
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
     is_owner = user.id == owner_id
 
-    # --- Permission Check ---
     if not has_staff_role and not is_owner:
         embed = discord.Embed(
             title="Permission Denied",
@@ -3552,15 +3554,39 @@ async def erlc_joins(interaction: discord.Interaction):
             colour=discord.Colour.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return False, None
 
-    # --- Owner Bypass or Staff defer ---
     bypass_message = None
     if is_owner and not has_staff_role:
         bypass_message = await send_owner_bypass_embed(interaction)
         await asyncio.sleep(1.5)
     else:
         await interaction.response.defer(thinking=True)
+
+    return True, bypass_message
+
+
+async def send_embed(interaction: discord.Interaction, bypass_message: discord.Message | None, embed: discord.Embed, ephemeral=False):
+    """Sends or edits the final embed depending on owner bypass status."""
+    try:
+        if bypass_message:
+            await bypass_message.edit(embed=embed)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+    except (discord.DiscordException, asyncio.TimeoutError) as e:
+        # Log the error instead of silently passing
+        logging.error("Failed to send or edit embed: %s", e)
+
+
+# ------------------- COMMANDS -------------------
+
+@erlc_group.command(name="joins", description="View ER:LC join/leave logs (staff only, owner bypass)")
+@slash_blacklist_check()
+async def erlc_joins(interaction: discord.Interaction):
+    has_perm, bypass_message = await check_staff_or_owner(interaction)
+    if not has_perm:
+        return
 
     try:
         join_logs = await fetch_api_data(f"{API_BASE}/joinlogs")
@@ -3573,10 +3599,8 @@ async def erlc_joins(interaction: discord.Interaction):
                 username, player_id = parse_player(entry.get("Player", "Unknown:0"))
                 user_link = f"[{username}](https://www.roblox.com/users/{player_id}/profile)" if player_id else username
                 ts = entry.get("Timestamp", 0)
-                if entry.get("Join", True):
-                    entries.append(f"> {user_link} joined the server <t:{ts}:R>")
-                else:
-                    entries.append(f"> {user_link} left the server <t:{ts}:R>")
+                action = "joined" if entry.get("Join", True) else "left"
+                entries.append(f"> {user_link} {action} the server <t:{ts}:R>")
             description = "\n".join(entries)
             count = len(entries)
 
@@ -3589,10 +3613,7 @@ async def erlc_joins(interaction: discord.Interaction):
             embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
             embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
+        await send_embed(interaction, bypass_message, embed)
 
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
@@ -3602,36 +3623,15 @@ async def erlc_joins(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        await send_embed(interaction, bypass_message, error_embed, ephemeral=True)
 
 
 @erlc_group.command(name="modcalls", description="View ER:LC moderator call logs (staff only, owner bypass)")
 @slash_blacklist_check()
 async def erlc_modcalls(interaction: discord.Interaction):
-    user = interaction.user
-    has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
-    is_owner = user.id == owner_id
-
-    # --- Permission Check ---
-    if not has_staff_role and not is_owner:
-        embed = discord.Embed(
-            title="Permission Denied",
-            description=f"{failed_emoji} You do not have permission to use this command.",
-            colour=discord.Colour.red()
-        )
-        embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    # --- Owner Bypass or Staff defer ---
-    bypass_message = None
-    if is_owner and not has_staff_role:
-        bypass_message = await send_owner_bypass_embed(interaction)
-        await asyncio.sleep(1.5)
-    else:
-        await interaction.response.defer(thinking=True)
+    has_perm, bypass_message = await check_staff_or_owner(interaction)
+    if not has_perm:
+        return
 
     try:
         modcalls = await fetch_api_data(f"{API_BASE}/modcalls")
@@ -3643,17 +3643,14 @@ async def erlc_modcalls(interaction: discord.Interaction):
             for entry in modcalls:
                 caller_name, caller_id = parse_player(entry.get("Caller", "Unknown:0"))
                 caller_link = f"[{caller_name}](https://www.roblox.com/users/{caller_id}/profile)" if caller_id else caller_name
-
                 moderator_str = entry.get("Moderator")
                 ts = entry.get("Timestamp", 0)
-
                 if moderator_str:
                     mod_name, mod_id = parse_player(moderator_str)
                     mod_link = f"[{mod_name}](https://www.roblox.com/users/{mod_id}/profile)" if mod_id else mod_name
                     entries.append(f"> {caller_link} called for a mod <t:{ts}:R>, handled by {mod_link}")
                 else:
                     entries.append(f"> {caller_link} called for a mod <t:{ts}:R> (unanswered)")
-
             description = "\n".join(entries)
             count = len(entries)
 
@@ -3666,10 +3663,7 @@ async def erlc_modcalls(interaction: discord.Interaction):
             embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
         embed.set_footer(text=f"Running {BOT_VERSION}")
 
-        if bypass_message:
-            await bypass_message.edit(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
+        await send_embed(interaction, bypass_message, embed)
 
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
@@ -3679,11 +3673,7 @@ async def erlc_modcalls(interaction: discord.Interaction):
             colour=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
-        if bypass_message:
-            await bypass_message.edit(embed=error_embed)
-        else:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-
+        await send_embed(interaction, bypass_message, error_embed, ephemeral=True)
 
 
 
@@ -4495,74 +4485,96 @@ async def afk_slash(interaction: discord.Interaction, reason: str = None):
     embed = await set_afk(interaction.user, reason)
     await interaction.followup.send(embed=embed, ephemeral=False)
 
-# ---------------- AFK HANDLING ----------------
-# ---------------- AFK HANDLING ----------------
+# ------------------- HELPERS -------------------
+
+async def handle_bot_mention(message: discord.Message, prefix: str) -> bool:
+    """Reply to bot mentions and return True if handled."""
+    if bot.user not in message.mentions or message.mention_everyone or len(message.mentions) > 1:
+        return False
+    if message.reference and getattr(message.reference.resolved, "author", None) and message.reference.resolved.author.bot:
+        return True  # Ignore bot reply references
+    reply = f"hiii, I'm **{bot.user.name}**!\n-# My prefix in this server is `{prefix}`."
+    await message.channel.send(reply)
+    return True
+
+
+async def unafk_user(message: discord.Message, afk_data: dict):
+    """Handle a user returning from AFK."""
+    author_id = str(message.author.id)
+    afk_info = afk_data.pop(author_id, None)
+    if not afk_info:
+        return
+    save_afk(afk_data)
+
+    ping_lines = []
+    for channel_id, pinger_id, ts in afk_info.get("pings", []):
+        pinger = bot.get_user(pinger_id)
+        if pinger:
+            channel_link = f"<#{channel_id}>"
+            ping_lines.append(f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}")
+
+    reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
+    if ping_lines:
+        reply_text += "\n" + "\n".join(ping_lines)
+    await message.channel.send(reply_text)
+
+
+async def reply_to_afk_mentions(message: discord.Message, afk_data: dict):
+    """Notify when mentioned users are AFK."""
+    for user in message.mentions:
+        user_id = str(user.id)
+        if user.id == message.author.id or user_id not in afk_data:
+            continue
+        afk_info = afk_data[user_id]
+        afk_info.setdefault("pings", []).append(
+            (message.channel.id, message.author.id, datetime.now(timezone.utc).timestamp())
+        )
+        save_afk(afk_data)
+        reply_text = f"{ping_emoji} **{user.name}** is currently AFK"
+        if reason := afk_info.get("reason"):
+            reply_text += f": {reason}"
+        await message.channel.send(reply_text)
+
+
+async def process_multi_commands(message: discord.Message, prefix: str):
+    """Split and process multiple commands separated by '&&'."""
+    commands_list = [cmd.strip() for cmd in message.content.split("&&") if cmd.strip()]
+    for cmd_text in commands_list:
+        if cmd_text.startswith(prefix):
+            fake_message = message
+            fake_message.content = cmd_text
+            await bot.process_commands(fake_message)
+
+
+# ------------------- EVENT -------------------
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    author_id = str(message.author.id)
     afk_data = load_afk()
     prefix = getattr(bot, "command_prefix", "?")
     if callable(prefix):
         prefix = await prefix(bot, message)
 
-    # ---------------- Bot Mention Greeting ----------------
-    if (
-        bot.user in message.mentions
-        and not message.mention_everyone
-        and len(message.mentions) == 1
-    ):
-        if message.reference and getattr(message.reference.resolved, "author", None) and message.reference.resolved.author.bot:
-            return
-        reply = f"hiii, I'm **{bot.user.name}**!\n-# My prefix in this server is `{prefix}`."
-        await message.channel.send(reply)
+    # Handle bot mentions
+    if await handle_bot_mention(message, prefix):
         return
 
-    # ---------------- Manual Un-AFK ----------------
-    if author_id in afk_data and not message.content.strip().startswith("-#"):
-        afk_info = afk_data.pop(author_id)
-        save_afk(afk_data)
+    # Manual un-AFK
+    if str(message.author.id) in afk_data and not message.content.strip().startswith("-#"):
+        await unafk_user(message, afk_data)
 
-        ping_lines = []
-        for channel_id, pinger_id, ts in afk_info.get("pings", []):
-            channel_link = f"<#{channel_id}>"
-            pinger = bot.get_user(pinger_id)
-            if pinger:
-                ping_lines.append(f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}")
+    # Reply to AFK pings
+    await reply_to_afk_mentions(message, afk_data)
 
-        reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
-        if ping_lines:
-            reply_text += "\n" + "\n".join(ping_lines)
-        await message.channel.send(reply_text)
+    # Multi-command handling
+    await process_multi_commands(message, prefix)
 
-    # ---------------- Reply to AFK Pings ----------------
-    for user in message.mentions:
-        user_id = str(user.id)
-        if user_id in afk_data and user.id != message.author.id:
-            afk_info = afk_data[user_id]
-            afk_info.setdefault("pings", []).append(
-                (message.channel.id, message.author.id, datetime.now(timezone.utc).timestamp())
-            )
-            save_afk(afk_data)
-
-            reply_text = f"{ping_emoji} **{user.name}** is currently AFK"
-            if reason := afk_info.get("reason"):
-                reply_text += f": {reason}"
-            await message.channel.send(reply_text)
-
-    # ---------------- Multi-command Handling ----------------
-    commands_list = [cmd.strip() for cmd in message.content.split("&&") if cmd.strip()]
-    for cmd_text in commands_list:
-        if cmd_text.startswith(prefix):
-            # Create a fake message object for each sub-command
-            fake_message = message
-            fake_message.content = cmd_text
-            await bot.process_commands(fake_message)
-    
-    # ---------------- Normal command processing ----------------
+    # Normal command processing
     await bot.process_commands(message)
+
 
 
 
