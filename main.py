@@ -641,46 +641,13 @@ def create_ping_embed(ctx_or_interaction):
 @bot.command(name="ping")
 async def ping_prefix(ctx: commands.Context):
     embed = create_ping_embed(ctx)
-    await ctx.send(embed=embed)
+    await ctx.reply(embed=embed)
 
 # Slash command
 @bot.tree.command(name="ping", description="Check the bot's latency and uptime")
 @slash_blacklist_check()
 async def ping_slash(interaction: discord.Interaction):
     embed = create_ping_embed(interaction)
-    await interaction.response.send_message(embed=embed)
-
-# ---------------------- .uptime ----------------------
-
-@bot.command(name="uptime")
-async def uptime_prefix(ctx: commands.Context):
-    uptime_str = get_uptime(bot)
-
-    embed = discord.Embed(
-        title=f"{time_emoji} Bot Uptime",
-        description=f"The bot has been online for:\n**{uptime_str}**",
-        color=0x1E77BE
-    )
-
-    embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-    embed.set_footer(text=f"Running {BOT_VERSION}")
-    await ctx.send(embed=embed)
-
-# ---------------------- /uptime ----------------------
-
-@bot.tree.command(name="uptime", description="Check how long the bot has been online")
-@slash_blacklist_check()
-async def uptime_slash(interaction: discord.Interaction):
-    uptime_str = get_uptime(bot)
-
-    embed = discord.Embed(
-        title=f"{time_emoji} Bot Uptime",
-        description=f"The bot has been online for:\n**{uptime_str}**",
-        color=0x1E77BE
-    )
-
-    embed.set_author(name=interaction.guild.name, icon_url=interaction.guild.icon.url)
-    embed.set_footer(text=f"Running {BOT_VERSION}")
     await interaction.response.send_message(embed=embed)
 
 # ---------------------- .servers ----------------------
@@ -723,12 +690,12 @@ async def servers_prefix(ctx: commands.Context):
     await ctx.defer()
     guilds = bot.guilds
     if not guilds:
-        await ctx.send("The bot is not in any servers.")
+        await ctx.reply("The bot is not in any servers.")
         return
 
     for guild in guilds:
         embed = await create_guild_embed(guild)
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
 
 # Slash command
 @bot.tree.command(name="servers", description="List all servers the bot is in")
@@ -849,7 +816,7 @@ async def reboot(ctx):
     except discord.HTTPException as e:
         log.warning("Failed to react with tick_emoji: %s", e)
 
-    await ctx.send(embed=restart_embed(ctx))
+    await ctx.reply(embed=restart_embed(ctx))
 
     # --- Validate python executable (avoid untrusted paths) ---
     python_path = sys.executable  # usually an absolute path
@@ -880,7 +847,7 @@ async def reboot(ctx):
         os.execv(python_path, argv)  # nosec: B606
     except OSError as e:
         # Exec failed — inform operator and log full traceback
-        await ctx.send(embed=fail_embed(ctx, f"os.execv failed: {e}"))
+        await ctx.reply(embed=fail_embed(ctx, f"os.execv failed: {e}"))
         log.exception("os.execv failed while attempting to restart: %s", e)
 
 # ========================= ERLC stuff =========================
@@ -2044,7 +2011,7 @@ async def erlc_players(interaction: discord.Interaction):
 @bot.command(name="discord")
 async def discord_cmd(ctx, subcommand: str = None):
     if not subcommand or subcommand.lower() != "check":
-        await ctx.send(f"{failed_emoji} Unknown command. Please use `/discord check`.")
+        await ctx.reply(f"{failed_emoji} Unknown command. Please use `/discord check`.")
         return
 
     user = ctx.author
@@ -2057,7 +2024,7 @@ async def discord_cmd(ctx, subcommand: str = None):
             description=f"{failed_emoji} You do not have permission to use this command.",
             colour=discord.Color.red()
         )
-        return await ctx.send(embed=embed)
+        return await ctx.reply(embed=embed)
 
     bypass_message = None
     # owner bypass
@@ -2066,7 +2033,7 @@ async def discord_cmd(ctx, subcommand: str = None):
             description="⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
     else:
         async with ctx.typing():
@@ -2078,19 +2045,19 @@ async def discord_cmd(ctx, subcommand: str = None):
             if bypass_message:
                 await bypass_message.edit(embed=embed)
             else:
-                await ctx.send(embed=embed)
+                await ctx.reply(embed=embed)
         else:
             err_msg = get_erlc_error_message(0, exception="Failed to fetch check")
             if bypass_message:
                 await bypass_message.edit(content=err_msg)
             else:
-                await ctx.send(err_msg)
+                await ctx.reply(err_msg)
     except Exception as e:
         err_msg = get_erlc_error_message(0, exception=e)
         if bypass_message:
             await bypass_message.edit(content=err_msg)
         else:
-            await ctx.send(err_msg)
+            await ctx.reply(err_msg)
 
 # --
 
@@ -2158,7 +2125,6 @@ async def update_vc_status():
         logger.error(f"{failed_emoji} Failed to update VC names: {e}")
 
 # -
-
 # ---------------------- Helpers ----------------------
 async def update_vc_name_api(
     ctx,
@@ -2167,15 +2133,11 @@ async def update_vc_name_api(
     name_format: str,
     success_message: str,
 ):
-    """Generic helper for updating a VC name based on API field, with full error embed handling."""
+    """Generic helper for updating a VC name based on API field, all messages are embeds."""
     if ctx.author.id != OWNER_ID:
-        try:
-            await ctx.message.add_reaction(failed_emoji)
-        except Exception:
-            pass
-        return
+        return  # Not owner, do nothing
 
-    bypass_message = None  # If you want to simulate owner bypass, can be used later
+    bypass_message = None  # Can be used for owner bypass if needed
 
     try:
         # --- Fetch server info ---
@@ -2202,36 +2164,30 @@ async def update_vc_name_api(
                 except discord.HTTPException as e:
                     raise Exception(f"Failed to update VC name: {e}")
 
-        # Safe tick emoji
-        try:
-            await ctx.message.add_reaction(tick_emoji)
-        except Exception:
-            pass
-
-        # Send success message
-        await ctx.send(success_message.format(value=field_value))
+        # Send success message as an embed
+        embed = discord.Embed(
+            description=success_message.format(value=field_value),
+            color=discord.Color.green()
+        )
+        await ctx.reply(embed=embed)
 
     except Exception as e:
         # --- Error Handling in Embed ---
         err_msg = get_erlc_error_message(0, exception=e)
         error_embed = discord.Embed(
-            title=f"{failed_emoji} ER:LC API Error",
+            title="ER:LC API Error",
             description=err_msg,
-            colour=discord.Color.red()
+            color=discord.Color.red()
         )
         error_embed.set_footer(text=f"Running {BOT_VERSION}")
 
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
         else:
-            await ctx.send(embed=error_embed)
+            await ctx.reply(embed=error_embed)
 
 
-
-
-
-
-
+# ---------------------- Commands ----------------------
 @bot.command(name="joincode")
 async def join_code(ctx):
     """Owner-only: update join code VC"""
@@ -2240,7 +2196,7 @@ async def join_code(ctx):
         api_field="JoinKey",
         channel_id=CODE_VC_ID,
         name_format="「🔑」Code: {value}",
-        success_message="{tick_emoji} Join code VC updated to: `{value}`",
+        success_message="Join code VC updated to: `{value}`",
     )
 
 
@@ -2252,8 +2208,9 @@ async def server_name(ctx):
         api_field="Name",
         channel_id=SERVERNAME_VC_ID,
         name_format=f"{SERVERNAME_PREFIX} {{value}}",
-        success_message="{tick_emoji} Server name VC updated to: `{value}`",
+        success_message="Server name VC updated to: `{value}`",
     )
+
 
 
 
@@ -2684,7 +2641,7 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
 
     handler = handlers.get(subcommand)
     if not handler:
-        return await ctx.send(f"{failed_emoji} Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
+        return await ctx.reply(f"{failed_emoji} Unknown subcommand `{subcommand}`. Please use the `/erlc` slash command.")
 
     # Pass extra args only if needed
     if subcommand == "teamkick":
@@ -2698,7 +2655,7 @@ async def erlc(ctx, subcommand: str = None, roblox_user: str = None, *, reason: 
 # --- Handler: .erlc teamkick ---
 async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
     if not roblox_user or not reason:
-        return await ctx.send(f"{failed_emoji} Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
+        return await ctx.reply(f"{failed_emoji} Usage: `{COMMAND_PREFIX}erlc teamkick <roblox_user> <reason>`")
 
     user = ctx.author
     has_staff_role = any(r.id == staff_role_id for r in getattr(user, "roles", []))
@@ -2710,7 +2667,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
             await ctx.message.add_reaction(failed_emoji)
         except discord.HTTPException:
             pass
-        return await ctx.send(embed=build_permission_denied_embed(prefix=True))
+        return await ctx.reply(embed=build_permission_denied_embed(prefix=True))
 
     # --- Owner bypass embed ---
     if is_owner and not has_staff_role:
@@ -2718,7 +2675,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
             description="⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
 
     # React with ✅ to show command received
@@ -2729,7 +2686,7 @@ async def handle_erlc_teamkick(ctx, roblox_user=None, *, reason=None):
 
     # Show processing embed (if not owner bypass)
     if not bypass_message:
-        processing_message = await ctx.send(embed=build_status_embed(roblox_user))
+        processing_message = await ctx.reply(embed=build_status_embed(roblox_user))
     else:
         processing_message = bypass_message
 
@@ -2772,12 +2729,12 @@ async def handle_erlc_vehicles(ctx):
                               description=f"{failed_emoji} You do not have permission to use this command.",
                               colour=discord.Colour.red())
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await ctx.send(embed=embed)
+        return await ctx.reply(embed=embed)
 
     bypass_message = None
     if is_owner and not has_staff_role:
         bypass_embed = discord.Embed(description="⏳ Bypassing checks...", colour=discord.Color.gold())
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.2)
     else:
         # show typing
@@ -2811,7 +2768,7 @@ async def handle_erlc_vehicles(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
     except Exception as e:
         err = get_erlc_error_message(0, exception=e)
@@ -2820,7 +2777,7 @@ async def handle_erlc_vehicles(ctx):
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
         else:
-            await ctx.send(embed=error_embed)
+            await ctx.reply(embed=error_embed)
 
 
 
@@ -2841,7 +2798,7 @@ async def handle_erlc_modcalls(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await ctx.send(embed=embed)
+        return await ctx.reply(embed=embed)
 
     # --- Owner Bypass Embed ---
     bypass_message = None
@@ -2850,7 +2807,7 @@ async def handle_erlc_modcalls(ctx):
             description="⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
     else:
         await ctx.typing()
@@ -2897,7 +2854,7 @@ async def handle_erlc_modcalls(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
@@ -2911,7 +2868,7 @@ async def handle_erlc_modcalls(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
 
 # --- Handler: .erlc joins ---
@@ -2930,7 +2887,7 @@ async def handle_erlc_joins(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await ctx.send(embed=embed)
+        return await ctx.reply(embed=embed)
 
     # --- Owner Bypass ---
     if is_owner and not has_staff_role:
@@ -2939,7 +2896,7 @@ async def handle_erlc_joins(ctx):
             description=f"⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
     else:
         # Staff get typing indicator
@@ -2989,7 +2946,7 @@ async def handle_erlc_joins(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
     except Exception as e:
         error = get_erlc_error_message(0, exception=e)
@@ -3003,20 +2960,20 @@ async def handle_erlc_joins(ctx):
         if bypass_message:
             await bypass_message.edit(embed=error_embed)
         else:
-            await ctx.send(embed=error_embed)
+            await ctx.reply(embed=error_embed)
 
 async def send_response(ctx_or_interaction, content=None, embed=None, is_interaction=False, ephemeral=False):
     """Send a response depending on the context type."""
     if is_interaction:
         if content and not embed:
-            await ctx_or_interaction.followup.send(content, ephemeral=ephemeral)
+            await ctx_or_interaction.followup.reply(content, ephemeral=ephemeral)
         else:
-            await ctx_or_interaction.followup.send(embed=embed, ephemeral=ephemeral)
+            await ctx_or_interaction.followup.reply(embed=embed, ephemeral=ephemeral)
     else:
         if content and not embed:
-            await ctx_or_interaction.send(content)
+            await ctx_or_interaction.reply(content)
         else:
-            await ctx_or_interaction.send(embed=embed)
+            await ctx_or_interaction.reply(embed=embed)
 
 
 # --- Handler: erlc logs ---
@@ -3087,7 +3044,7 @@ async def handle_erlc_bans(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
         return
 
     # --- Owner Bypass ---
@@ -3097,7 +3054,7 @@ async def handle_erlc_bans(ctx):
             description=f"⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
 
     try:
@@ -3123,7 +3080,7 @@ async def handle_erlc_bans(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
     except Exception as e:
         error_embed = discord.Embed(
@@ -3136,10 +3093,10 @@ async def handle_erlc_bans(ctx):
             if bypass_message:
                 await bypass_message.edit(embed=error_embed)
             else:
-                await ctx.send(embed=error_embed)
+                await ctx.reply(embed=error_embed)
         except:
             # Fallback if editing fails
-            await ctx.send(embed=error_embed)
+            await ctx.reply(embed=error_embed)
 
 
 
@@ -3151,7 +3108,7 @@ async def handle_erlc_info(ctx):
         async with ctx.typing():
             embed = await erlc_info_embed(ctx)
             view = InfoView(ctx, lambda: erlc_info_embed(ctx))
-            await ctx.send(embed=embed, view=view)
+            await ctx.reply(embed=embed, view=view)
     except Exception as e:
         await report_erlc_error(ctx, e, ".erlc info")
 
@@ -3173,7 +3130,7 @@ async def handle_erlc_players(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        return await ctx.send(embed=embed)
+        return await ctx.reply(embed=embed)
 
     # --- Owner Bypass Embed ---
     if is_owner and not has_staff_role:
@@ -3181,7 +3138,7 @@ async def handle_erlc_players(ctx):
             description="⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
     else:
         await ctx.typing()
@@ -3218,7 +3175,7 @@ async def handle_erlc_players(ctx):
         if bypass_message:
             await bypass_message.edit(embed=embed)
         else:
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
 
     except Exception as e:
         error_embed = discord.Embed(
@@ -3245,7 +3202,7 @@ async def handle_erlc_code(ctx):
                 title="ER:LC Code",
                 description=f"The ER:LC code is `{erlc_code}`."
             )
-            await ctx.send(embed=embed)
+            await ctx.reply(embed=embed)
     except Exception as e:
         await report_erlc_error(ctx, e, ".erlc code")
 
@@ -3265,7 +3222,7 @@ async def handle_erlc_kills(ctx):
             colour=discord.Color.red()
         )
         embed.set_footer(text=f"Running {BOT_VERSION}")
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
         return
 
     # --- Owner Bypass ---
@@ -3275,7 +3232,7 @@ async def handle_erlc_kills(ctx):
             description=f"⏳ Bypassing checks...",
             colour=discord.Color.gold()
         )
-        bypass_message = await ctx.send(embed=bypass_embed)
+        bypass_message = await ctx.reply(embed=bypass_embed)
         await asyncio.sleep(1.5)
 
     try:
@@ -3300,7 +3257,7 @@ async def handle_erlc_kills(ctx):
             if bypass_message:
                 await bypass_message.edit(embed=embed)
             else:
-                await ctx.send(embed=embed)
+                await ctx.reply(embed=embed)
 
     except Exception as e:
         error_embed = discord.Embed(
@@ -3317,7 +3274,12 @@ async def handle_erlc_kills(ctx):
 
 
 async def handle_erlc_command(ctx):
-    await ctx.send("Please use the `/erlc command` slash command.")
+    embed = discord.Embed(
+        description="Please use the `/erlc command` slash command instead.",
+        color=0x1E77BE
+    )
+    await ctx.reply(embed=embed)
+
 
 
 # --- Utility Functions ---
@@ -3360,7 +3322,7 @@ def parse_player(player_raw):
 
 async def report_erlc_error(ctx, exception, context):
     error_message = await get_erlc_error_message(0, exception=exception)
-    await ctx.send(error_message)
+    await ctx.reply(error_message)
     print(f"[ERROR] {context} failed: {exception}")
 
 
@@ -3697,6 +3659,7 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
 
         
+    
 
 
 
@@ -3723,25 +3686,152 @@ async def erlc_vehicles(interaction: discord.Interaction):
 
 
 
+from difflib import get_close_matches
+
+# List of random fight outcomes
+fight_messages = [
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA blackout forces them to fight in the dark,\nA chicken wins. Nobody saw it coming. 🐔",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in a bouncy castle full of marshmallows,\nThe ref rage-quits. Match canceled. 🚫",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA sudden lightning strikes, giving {opponent} a lucky hit!\n{challenger} loses. 🌩️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel on a giant pizza, slipping everywhere,\nThey both fall and the duel is a tie. 🍕",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe fight turns into a dance-off,\n{challenger} wins by moonwalk. 💃",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA wild bear appears and scares them both,\nNo one wins. 🐻",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in zero gravity,\n{opponent} floats away and loses. 🚀",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe duel is interrupted by a sudden pie fight,\nEveryone gets messy. 🥧",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA giant banana peel appears,\n{challenger} slips and loses. 🍌",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nSuddenly, a swarm of bees intervenes,\nThey both run away. 🐝",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe duel is judged by a cat,\n{opponent} wins because the cat likes them more. 🐱",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in a room full of mirrors,\nBoth get dizzy and collapse. 🪞",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA magic spell turns them into frogs,\nThey hop away. 🐸",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel underwater,\n{challenger} forgets how to swim and loses. 🐠",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nSuddenly, everyone starts singing,\nThey pause the fight to join. 🎤",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe duel is replaced by a thumb war,\n{opponent} triumphs. 👍",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA dragon lands in the arena,\nThey both run away screaming. 🐉",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel on roller skates,\n{challenger} falls spectacularly. 🛼",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA gust of wind blows their swords away,\nThey resort to paper airplanes. 📝",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight on a giant cake,\n{opponent} eats part of it and wins by default. 🎂",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA giant pillow appears,\nThey start a pillow fight instead. 🛏️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe referee is a parrot,\n{challenger} gets distracted and loses. 🦜",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThe duel turns into a karaoke contest,\n{opponent} wins by hitting high notes. 🎶",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel on a slippery ice rink,\nBoth fall and break into laughter. ⛸️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA random pizza delivery interrupts,\nThey fight over the last slice. 🍕",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey accidentally summon a tiny tornado,\nBoth get spun away. 🌪️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA clown appears and distracts them,\nThe duel becomes a juggling contest. 🤡",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel with foam swords,\n{challenger} loses dramatically. 🪓",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nSuddenly, confetti rains down,\nThey both get covered and forget the fight. 🎉",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel in a library,\nEveryone shushes them, duel ends quietly. 📚",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight on a trampoline,\n{opponent} bounces away to victory. 🤸",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA sneezing fit interrupts {challenger},\n{opponent} wins. 🤧",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA flash mob joins in,\nThey dance instead of fighting. 🕺",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight with water guns,\n{challenger} gets soaked first. 💦",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA random trampoline catapult launches them,\nThey end up in a hedge. 🌳",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel on roller coasters,\n{opponent} screams and loses. 🎢",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in a room full of balloons,\nPopping noises make them pause. 🎈",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA pizza delivery drone intervenes,\nThe duel becomes a pizza tossing contest. 🍕",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA sudden earthquake shakes the arena,\nThey tumble and call it a draw. 🌍",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA wizard casts a sleep spell,\n{challenger} snoozes first. 💤",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel in a chocolate factory,\n{opponent} eats too much chocolate and loses. 🍫",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA talking dog judges the fight,\n{challenger} gets distracted by the dog. 🐕",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in a foggy arena,\nNo one knows who wins. 🌫️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA flying carpet lands beneath them,\nThey ride off instead of finishing. 🪁",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA sudden food fight breaks out,\nBoth are covered in spaghetti. 🍝",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel in a bubble wrap room,\n{opponent} pops their way to victory. 🫧",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel during a rainstorm,\n{challenger} slips and loses. ☔",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA marching band passes by,\nThey stop to dance along. 🥁",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight in a sandcastle arena,\nThe tide washes it away. 🏖️",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA giant hamster wheel spins them around,\nBoth fall off dizzy. 🐹",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey fight on a giant trampoline,\n{opponent} bounces higher and wins. 🤸",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nA disco ball descends,\nThey dance instead of fighting. 🪩",
+    "{challenger} challenges {opponent} to a duel! ⚔️\nThey duel in a jungle gym,\n{challenger} gets stuck on the slide. 🛝"
+]
+
+
+async def resolve_user(ctx, user_input):
+    # 1️⃣ Check mentions
+    if ctx.message.mentions:
+        return ctx.message.mentions[0]
+
+    # 2️⃣ Check ID
+    try:
+        user_id = int(user_input)
+        user = ctx.guild.get_member(user_id)
+        if user:
+            return user
+    except ValueError:
+        pass
+
+    # 3️⃣ Exact username/nickname match
+    for member in ctx.guild.members:
+        if member.name.lower() == user_input.lower() or (member.nick and member.nick.lower() == user_input.lower()):
+            return member
+
+    # 4️⃣ Fuzzy matching
+    member_names = [m.name for m in ctx.guild.members] + [m.nick for m in ctx.guild.members if m.nick]
+    matches = get_close_matches(user_input, member_names, n=1, cutoff=0.4)  # cutoff 0.4 for partial matches
+    if matches:
+        # Find the member object matching the closest string
+        for member in ctx.guild.members:
+            if member.name == matches[0] or member.nick == matches[0]:
+                return member
+
+    return None
+
+@bot.command()
+async def fight(ctx, *, user_input: str):
+    opponent = await resolve_user(ctx, user_input)
+    if not opponent:
+        await ctx.send("Could not find that user. ❌")
+        return
+
+    challenger = ctx.author.mention
+    opponent_mention = opponent.mention
+
+    message = random.choice(fight_messages).format(challenger=challenger, opponent=opponent_mention)
+
+    embed = discord.Embed(
+        title="Duel!",
+        description=message,
+        color=discord.Color.random()
+    )
+
+    await ctx.send(embed=embed)
 
 
 
+from discord import ui, ButtonStyle
 
+class ShutdownConfirm(ui.View):
+    def __init__(self):
+        super().__init__(timeout=30)  # Buttons will timeout in 30 seconds
+        self.value = None
 
+    @ui.button(label="Yes", style=ButtonStyle.danger)
+    async def yes(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("You are not allowed to do this.", ephemeral=True)
+            return
+        await interaction.response.send_message("Shutting down... ⚡", ephemeral=True)
+        await bot.close()
 
+    @ui.button(label="No", style=ButtonStyle.secondary)
+    async def no(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_message("Shutdown cancelled. ✅", ephemeral=True)
+        self.stop()
 
+@bot.command()
+async def shutdown(ctx):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("You are not allowed to use this command. ❌")
+        return
 
+    embed = discord.Embed(
+        title="Shutdown Confirmation",
+        description="Are you sure you want to shutdown the bot?",
+        color=discord.Color.red()
+    )
 
-
-
-
-
-
-
-
-
-
-
+    view = ShutdownConfirm()
+    await ctx.send(embed=embed, view=view)
 
 
 
@@ -4261,11 +4351,15 @@ async def on_message(message):
     afk_data = load_afk()
     author_id = str(message.author.id)
 
-    # 👋 Respond if the bot is pinged directly
-    if bot.user.mentioned_in(message) and len(message.mentions) == 1:
+    # 👋 Respond only if the bot is pinged directly (ignore @here/@everyone)
+    if bot.user in message.mentions and not message.mention_everyone and len(message.mentions) == 1:
+        if message.reference and message.reference.resolved and message.reference.resolved.author.bot:
+            return
+
         prefix = getattr(bot, "command_prefix", "?")
         if callable(prefix):
             prefix = await prefix(bot, message)
+
         reply = (
             f"hiii, I'm **{bot.user.name}**!\n"
             f"-# My prefix in this server is `{prefix}`."
@@ -4279,7 +4373,7 @@ async def on_message(message):
         save_afk(afk_data)
 
         ping_lines = []
-        for channel_id, pinger_id, ts in afk_info["pings"]:
+        for channel_id, pinger_id, ts in afk_info.get("pings", []):
             channel_link = f"<#{channel_id}>"
             pinger = bot.get_user(pinger_id)
             if pinger:
@@ -4287,10 +4381,10 @@ async def on_message(message):
                     f"-# {ping_emoji} **{pinger.name}** pinged you <t:{int(ts)}:R> in {channel_link}"
                 )
 
+        reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
         if ping_lines:
-            reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!\n" + "\n".join(ping_lines)
-        else:
-            reply_text = f"{tick_emoji} Welcome back, **{message.author.name}**!"
+            reply_text += "\n" + "\n".join(ping_lines)
+
         await message.channel.send(reply_text)
 
     # 📢 Reply to AFK pings
@@ -4298,18 +4392,34 @@ async def on_message(message):
         user_id = str(user.id)
         if user_id in afk_data and user.id != message.author.id:
             afk_info = afk_data[user_id]
-            afk_info["pings"].append(
+            afk_info.setdefault("pings", []).append(
                 (message.channel.id, message.author.id, datetime.now(timezone.utc).timestamp())
             )
             save_afk(afk_data)
 
             reply_text = f"{ping_emoji} **{user.name}** is currently AFK"
-            if afk_info["reason"]:
+            if afk_info.get("reason"):
                 reply_text += f": {afk_info['reason']}"
             await message.channel.send(reply_text)
 
-    # Continue normal bot command processing
-    await bot.process_commands(message)
+    # ⚙️ Handle multiple commands in one message (split by "&&")
+    prefix = getattr(bot, "command_prefix", "?")
+    if callable(prefix):
+        prefix = await prefix(bot, message)
+
+    if "&&" in message.content:
+        commands_list = [cmd.strip() for cmd in message.content.split("&&") if cmd.strip()]
+        for cmd_text in commands_list:
+            if cmd_text.startswith(prefix):
+                # Create a fake message object for each sub-command
+                fake_message = message
+                fake_message.content = cmd_text
+                await bot.process_commands(fake_message)
+    else:
+        # Continue normal command processing
+        await bot.process_commands(message)
+
+
 #--
 
 SERVER_ID = 1343179590247645205
@@ -5132,7 +5242,7 @@ async def send_command_detail(target, command_name):
 
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN_BATA")
+        token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise ValueError("⚠️ DISCORD_TOKEN is missing from environment variables.")
 
